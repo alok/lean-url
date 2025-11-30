@@ -442,24 +442,12 @@ def authorityState : ParserM Unit := do
       /- 1.4.3 -/
       if (← get).passwordTokenSeen then modify fun m => {
         m with
-        url := {
-          m.url with
-          password :=
-            match m.url.password with
-            | none => encodedCodePoints
-            | some x => x.append encodedCodePoints
-        }
+        url := { m.url with password := m.url.password.append encodedCodePoints }
       }
       /- 1.4.4 -/
       else modify fun m => {
         m with
-        url := {
-          m.url with
-            username :=
-              match m.url.username with
-              | none => encodedCodePoints
-              | some x => x.append encodedCodePoints
-        }
+        url := { m.url with username := m.url.username.append encodedCodePoints }
       }
     /- 1.5 -/
     modify fun m => { m with buffer := "" }

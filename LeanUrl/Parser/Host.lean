@@ -63,8 +63,8 @@ def parseAux : EStateM SyntaxViolationLog State Host := do
     match opaqueHost with
     | .error e => throw e
     | .ok a =>
-      if h: !a.isEmpty
-      then return (Host.opq ⟨a, h⟩)
+      if h: !a.isEmpty && a.all Char.isAscii
+      then return (Host.opq ⟨a, by grind, by grind⟩)
       else throw (invalidUrlUnit, none, none)
   /- 3. -/
   if (← curr?).isNone then throw (hostEarlyEOF, some (Int.ofNat (← get).pointer), none)
