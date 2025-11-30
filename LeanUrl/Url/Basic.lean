@@ -28,6 +28,7 @@ def labels (d : Domain) : Array String := strictSplit d.val.toList.toArray '\u00
 
 end Domain
 
+/-- Ipv4 serializer from [3.6: Host Serializing](https://url.spec.whatwg.org/#host-serializing) -/
 def serializeIpv4 (ipv4 : UInt32) : String := Id.run do
   let mut out := ""
   let mut n : UInt32 := ipv4
@@ -46,6 +47,7 @@ def printHex : Nat → String
         aux (n / 16) ((Nat.digitChar (n % 16)) :: sink)
     (aux n []).foldl (init := "") (fun sink next => sink.push next)
 
+/--See: https://url.spec.whatwg.org/#find-the-ipv6-address-compressed-piece-index -/
 def ipv6Find (ipv6 : Std.Net.IPv6Addr) : Option Nat := Id.run do
   let mut longestIndex : Option Nat := none
   let mut longestSize := 1
@@ -67,6 +69,7 @@ def ipv6Find (ipv6 : Std.Net.IPv6Addr) : Option Nat := Id.run do
   if foundSize > longestSize then return foundIndex
   return longestIndex
 
+/-- Ipv6 serializer from [3.6: Host Serializing](https://url.spec.whatwg.org/#host-serializing) -/
 def serializeIpv6 (ipv6 : Std.Net.IPv6Addr) : String := Id.run do
   let mut out := ""
   let compress := ipv6Find ipv6
@@ -92,10 +95,13 @@ def serializeIpv6 (ipv6 : Std.Net.IPv6Addr) : String := Id.run do
     if pieceIndex != 7 then out := out.push '\u003A'
   return out
 
-/-- An opaque host is a non-empty ASCII string that can be used for further processing. -/
+/-- "An opaque host is a non-empty ASCII string that can be used for further processing."
+See: https://url.spec.whatwg.org/#host-representation
+-/
 structure OpaqueHost where
   val : String
-  h : !val.isEmpty
+  isNonempty : !val.isEmpty
+  isAscii : val.all Char.isAscii
 deriving Repr
 
 
@@ -121,7 +127,7 @@ deriving Repr
 namespace Host
 
 def isLocalhost : Host → Bool
-  | .domain ⟨s, _⟩ | .opq ⟨s, _⟩ => s == "localhost"
+  | .domain ⟨s, _⟩ | .opq ⟨s, _, _⟩ => s == "localhost"
   | _ => false
 
 /-
@@ -137,7 +143,6 @@ def serialize : Host → String
   | .opq o => o.val
   /- The spec says ".empty = empty string"-/
   | .empty => ""
-
 
 def publicSuffixListAlgo (s : String): String := sorry
 /-
@@ -184,16 +189,30 @@ def registrableDomain (h : Host) : Option String :=
   | some h' => sorry
 end Host
 
-/- 4.1 -/
+/-- From [4.1. URL representation](https://url.spec.whatwg.org/#url-representation):
+
+A URL is a struct that represents a universal identifier. To disambiguate from a valid URL
+string it can also be referred to as a URL record.
+-/
 structure Url where
+  /--A URL’s scheme is an ASCII string that identifies the type of URL and can be used to
+  dispatch a URL for further processing after parsing. It is initially the empty string. -/
   scheme       : String
-  username     : Option String
-  password     : Option String
+  /-- A URL’s username is an ASCII string identifying a username. It is initially the empty string. -/
+  username     : String
+  /-- A URL’s password is an ASCII string identifying a password. It is initially the empty string. -/
+  password     : String
+  /-- A URL’s host is null or a host. It is initially null. -/
   host         : Option Host
+  /-- A URL’s port is either null or a 16-bit unsigned integer that identifies a networking port. It is initially null. -/
   port         : Option UInt16
+  /-- A URL’s path is a URL path, usually identifying a location. It is initially « ». -/
   path         : Sum String (Array String)
+  /-- A URL’s query is either null or an ASCII string. It is initially null. -/
   query        : Option String
+  /-- A URL’s fragment is either null or an ASCII string that can be used for further processing on the resource the URL’s other components identify. It is initially null. -/
   fragment     : Option String
+  /-- A URL also has an associated blob URL entry that is either null or a blob URL entry. It is initially null. -/
   blobUrlEntry : Option String
 deriving Repr
 
@@ -201,8 +220,8 @@ deriving Repr
 instance : Inhabited Url where
   default := {
     scheme := ""
-    username := none
-    password := none
+    username := ""
+    password := ""
     host := none
     port := none
     path := .inr #[]
@@ -216,11 +235,7 @@ namespace Url
 def schemeIsSpecial (url : Url) : Bool := url.scheme.isSpecialScheme
 
 def hasCredentials (url : Url) : Bool :=
-  let isNonempty : Option String → Bool
-    | none => false
-    | some x => !x.isEmpty
-  isNonempty url.username || isNonempty url.password
-
+  (!url.username.isEmpty) || (!url.password.isEmpty)
 
 structure Origin where
   val : Option String
@@ -316,9 +331,7 @@ def serializePath (url : Url) : String := Id.run do
       out := out.append s!"/{segment}"
     return out
 
-/-
-4.5 URL serializing
--/
+/-- [4.5. URL serializing](https://url.spec.whatwg.org/#url-serializing) -/
 def serialize (url : Url) (excludeFragment : Bool) : String := Id.run do
   /- 1. -/
   let mut out := s!"{url.scheme}:"
@@ -330,15 +343,13 @@ def serialize (url : Url) (excludeFragment : Bool) : String := Id.run do
     /- 2.2 -/
     if url.hasCredentials
     then
-      -- Assumes that you will never have JUST the password.
       /- 2.2.1 -/
-      if url.username.isSome then out := out.append url.username.get!
-      --out := out.append url.username.get!
+      out := out.append url.username
       /- 2.2.2 -/
-      if url.password.isSome && url.password != some ""
+      if !url.password.isEmpty
       then
         out := out.push '\u003A'
-        out := out.append url.password.get!
+        out := out.append url.password
       /- 2.2.3 -/
       out := out.push '@'
     /- 2.3 -/
