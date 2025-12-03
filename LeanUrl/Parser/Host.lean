@@ -29,18 +29,18 @@ def hasNext : EStateM SyntaxViolationLog State Bool := do
 def remainingToString : EStateM SyntaxViolationLog State String := fun s =>
   .ok (s.input[s.pointer:] : Subarray Char).toString s
 
-def endsInNumber : EStateM SyntaxViolationLog State Bool := do
-  let mut parts := strictSplit (← get).input '\u002E'
-  if parts.back? == some ""
-  then
-    if parts.size == 1 then return false
-    parts := parts.pop
+/-- Check if a string ends in a number (for IPv4 detection) -/
+def stringEndsInNumber (s : String) : Bool :=
+  let parts := strictSplit s.toList.toArray '\u002E'
+  let parts := if parts.back? == some "" ∧ parts.size > 1 then parts.pop else parts
   match parts.back? with
-  | none => return false
+  | none => false
   | some last =>
-    if last != "" && last.all (fun c => c.isDigit)
-    then return true
-    return (Ipv4Number.parse last.toArray).isOk
+    if last != "" && last.all (fun c => c.isDigit) then true
+    else (Ipv4Number.parse last.toArray).isOk
+
+def endsInNumber : EStateM SyntaxViolationLog State Bool := do
+  return stringEndsInNumber (← get).input.toString
 
 def parseAux : EStateM SyntaxViolationLog State Host := do
   /- 1. -/
@@ -76,8 +76,8 @@ def parseAux : EStateM SyntaxViolationLog State Host := do
     | none => throw (invalidUrlUnit, none, some "Invalid UTF-8 in host")
   /- 5., 6. -/
   let asciiDomain ← domainToAscii domain false
-  /- 7. -/
-  if !asciiDomain.isEmpty && (← endsInNumber)
+  /- 7. Check ends in number using the processed domain, not original input -/
+  if !asciiDomain.isEmpty && stringEndsInNumber asciiDomain
   then
     match Ipv4.parse asciiDomain with
     | .error e => throw e

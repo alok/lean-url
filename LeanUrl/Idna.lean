@@ -65,6 +65,28 @@ def mapHalfwidth (c : Char) : Char :=
   -- This is a simplified version - full implementation would need the complete mapping table
   c
 
+/-- Map mathematical alphanumeric symbols to ASCII -/
+def mapMathAlpha (c : Char) : Char :=
+  let n := c.val.toNat
+  -- Mathematical Bold Capital (U+1D400-U+1D419 → A-Z)
+  if 0x1D400 ≤ n ∧ n ≤ 0x1D419 then Char.ofNat (n - 0x1D400 + 'a'.toNat)
+  -- Mathematical Bold Small (U+1D41A-U+1D433 → a-z)
+  else if 0x1D41A ≤ n ∧ n ≤ 0x1D433 then Char.ofNat (n - 0x1D41A + 'a'.toNat)
+  -- Mathematical Italic Capital (U+1D434-U+1D44D → A-Z)
+  else if 0x1D434 ≤ n ∧ n ≤ 0x1D44D then Char.ofNat (n - 0x1D434 + 'a'.toNat)
+  -- Mathematical Italic Small (U+1D44E-U+1D467 → a-z)
+  else if 0x1D44E ≤ n ∧ n ≤ 0x1D467 then Char.ofNat (n - 0x1D44E + 'a'.toNat)
+  -- Mathematical Bold Italic Capital (U+1D468-U+1D481 → A-Z)
+  else if 0x1D468 ≤ n ∧ n ≤ 0x1D481 then Char.ofNat (n - 0x1D468 + 'a'.toNat)
+  -- Mathematical Bold Italic Small (U+1D482-U+1D49B → a-z)
+  else if 0x1D482 ≤ n ∧ n ≤ 0x1D49B then Char.ofNat (n - 0x1D482 + 'a'.toNat)
+  -- Mathematical Script Capital (U+1D49C-U+1D4B5 → A-Z, with gaps)
+  else if 0x1D49C ≤ n ∧ n ≤ 0x1D4B5 then Char.ofNat (n - 0x1D49C + 'a'.toNat)
+  -- Mathematical Script Small (U+1D4B6-U+1D4CF → a-z, with gaps)
+  else if 0x1D4B6 ≤ n ∧ n ≤ 0x1D4CF then Char.ofNat (n - 0x1D4B6 + 'a'.toNat)
+  -- Add more ranges as needed...
+  else c
+
 /-- Simple case folding for ASCII -/
 def caseFold (c : Char) : Char :=
   if 'A' ≤ c ∧ c ≤ 'Z' then
@@ -79,6 +101,7 @@ def mapChar (c : Char) : Option Char :=
     let c := mapFullwidth c
     let c := mapIdeographicStop c
     let c := mapIdeographicSpace c
+    let c := mapMathAlpha c
     let c := caseFold c
     some c
 
