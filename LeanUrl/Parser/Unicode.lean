@@ -1,54 +1,35 @@
 import LeanUrl.Util
 import LeanUrl.Parser.Util
+import LeanUrl.Idna
 import Std.Data.HashSet
 
 open Std (HashSet)
+open LeanUrl.Idna
 
 set_option linter.unusedVariables false
 
 /-
-1. punycode
-2. idna
-3. preprocessing section 4 + IDNA mapping table (section 5)
-4. unicodeToASCII/unicodeToUnicode
-
-*domainToAscii* is defined in whatwg, but it depends on unicodeToASCII
-
-*domainToUnicode* is also in whatwg, relies on unicode to unicode
+IDNA/UTS46 Unicode Processing for WHATWG URL
+See: https://url.spec.whatwg.org/#host-parsing
+See: https://www.unicode.org/reports/tr46/
 -/
 
 /-
- 4.2 ToASCII
+ 4.2 ToASCII (UTS46)
 
 The operation corresponding to ToASCII of [RFC3490] is defined by the following steps:
 
 Input
-
     A prospective domain_name expressed as a sequence of Unicode code points
-    A boolean flag: CheckHyphens
-    A boolean flag: CheckBidi
-    A boolean flag: CheckJoiners
-    A boolean flag: UseSTD3ASCIIRules
-    A boolean flag: Transitional_Processing (deprecated)
-    A boolean flag: VerifyDnsLength
-    A boolean flag: IgnoreInvalidPunycode
+    Boolean flags: CheckHyphens, CheckBidi, CheckJoiners, UseSTD3ASCIIRules,
+                   Transitional_Processing (deprecated), VerifyDnsLength, IgnoreInvalidPunycode
 
 Processing
-
-    To the input domain_name, apply the Processing Steps in Section 4, Processing, using the input boolean flags Transitional_Processing, CheckHyphens, CheckBidi, CheckJoiners, and UseSTD3ASCIIRules. This may record an error.
-    Break the result into labels at U+002E FULL STOP.
-    Convert each label with non-ASCII characters into Punycode [RFC3492], and prefix by “xn--”. This may record an error.
-    If the VerifyDnsLength flag is true, then verify DNS length restrictions. This may record an error. For more information, see [STD13] and [STD3].
-        The length of the domain name, excluding the root label and its dot, is from 1 to 253.
-        The length of each label is from 1 to 63.
-            Note: Technically, a complete domain name ends with an empty label for the DNS root (see [STD13] [RFC1034] section 3). This empty label, and the trailing dot, is almost always omitted.
-            When VerifyDnsLength is false, the empty root label is passed through.
-            When VerifyDnsLength is true, the empty root label is disallowed. This corresponds to the syntax in [RFC1034] section 3.5 Preferred name syntax which also defines the label length restrictions.
-    If an error was recorded in steps 1-4, then the operation has failed and a failure value is returned. No DNS lookup should be done.
-    Otherwise join the labels using U+002E FULL STOP as a separator, and return the result.
-
-Implementations are advised to apply additional tests to these labels, such as those described in Unicode Technical Report #36, Unicode Security Considerations [UTR36] and Unicode Technical Standard #39, Unicode Security Mechanisms [UTS39], and take appropriate actions. For example, a label with mixed scripts or confusables may be called out in the UI. Note that the use of Punycode to signal problems may be counter-productive, as described in [UTR36].
-
+    1. Apply the Processing Steps in Section 4, using the input boolean flags.
+    2. Break the result into labels at U+002E FULL STOP.
+    3. Convert each label with non-ASCII characters into Punycode, prefix by "xn--".
+    4. If VerifyDnsLength, check: domain 1-253 chars, each label 1-63 chars.
+    5. If error, return failure. Otherwise join labels with '.' and return.
 -/
 def unicodeToAscii
   (domainName : String)
@@ -62,11 +43,27 @@ def unicodeToAscii
     ignoreInvalidPunycode
     : Option Bool := none
   )
-  : Except String String := .ok domainName
+  : Except String String := do
+  -- Use strict mode if CheckHyphens or UseSTD3ASCIIRules is set
+  let beStrict := checkHyphens.getD false || useStd3ASCIIRules.getD false
+
+  -- Process domain using our IDNA implementation
+  let processed ← processDomain domainName beStrict
+
+  -- Verify DNS length if requested
+  if verifyDnsLength.getD false then
+    -- Domain length check (1-253)
+    if processed.isEmpty ∨ processed.length > 253 then
+      throw "Domain length must be 1-253 characters"
+    -- Label length check (1-63)
+    for label in processed.splitOn "." do
+      if label.length > 63 then
+        throw "Label length must be 1-63 characters"
+
+  return processed
 
 
 /-
-
 Let result be the result of running Unicode ToASCII with
 domain_name set to domain,
 CheckHyphens set to beStrict,
@@ -77,7 +74,6 @@ Transitional_Processing set to false,
 VerifyDnsLength set to beStrict,
 and IgnoreInvalidPunycode set to false.
 -/
-
 def domainToAscii (domainName : String) (beStrict : Bool) : Except SyntaxViolationLog String :=
   let result := unicodeToAscii
     domainName
@@ -97,26 +93,10 @@ def domainToAscii (domainName : String) (beStrict : Bool) : Except SyntaxViolati
 
 
 /-
-4.3 ToUnicode
+4.3 ToUnicode (UTS46)
 
-The operation corresponding to ToUnicode of [RFC3490] is defined by the following steps:
-
-Input
-
-    A prospective domain_name expressed as a sequence of Unicode code points
-    A boolean flag: CheckHyphens
-    A boolean flag: CheckBidi
-    A boolean flag: CheckJoiners
-    A boolean flag: UseSTD3ASCIIRules
-    A boolean flag: Transitional_Processing (deprecated)
-    A boolean flag: IgnoreInvalidPunycode
-
-Processing
-
-    To the input domain_name, apply the Processing Steps in Section 4, Processing, using the input boolean flags Transitional_Processing, CheckHyphens, CheckBidi, CheckJoiners, and UseSTD3ASCIIRules. This may record an error.
-    Like [RFC3490], this will always produce a converted Unicode string. Unlike ToASCII of [RFC3490], this always signals whether or not there was an error.
-
-Implementations are advised to apply additional tests to these labels, such as those described in Unicode Technical Report #36, Unicode Security Considerations [UTR36] and Unicode Technical Standard #39, Unicode Security Mechanisms [UTS39], and take appropriate actions. For example, a label with mixed scripts or confusables may be called out in the UI. Note that the use of Punycode to signal problems may be counter-productive, as described in [UTR36].
+Converts ACE-encoded labels back to Unicode for display.
+Unlike ToASCII, this always produces a result (may record errors but continues).
 -/
 def unicodeToUnicode
   (domainName : String)
@@ -128,7 +108,11 @@ def unicodeToUnicode
     transitionalProcessing
     ignoreInvalidPunycode
     : Option Bool := none
-  ) : Except String String := .ok domainName
+  ) : Except String String :=
+  -- First apply mapping, then decode any ACE labels
+  match LeanUrl.Idna.domainToUnicode (mapString domainName) with
+  | some result => .ok result
+  | none => .ok domainName  -- Fallback to original on decode failure
 
 
 /-
@@ -141,7 +125,6 @@ UseSTD3ASCIIRules set to beStrict,
 Transitional_Processing set to false,
 and IgnoreInvalidPunycode set to false.
 -/
-
 def domainToUnicode (domainName : String) (beStrict : Bool) : Except String String :=
   unicodeToUnicode
     domainName

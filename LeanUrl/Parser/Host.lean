@@ -69,9 +69,11 @@ def parseAux : EStateM SyntaxViolationLog State Host := do
   /- 3. -/
   if (← curr?).isNone then throw (hostEarlyEOF, some (Int.ofNat (← get).pointer), none)
   /- 4. -/
-  let domain : String :=
-    let percentDecoded := Percent.percentDecodeStr (← remainingToString)
-    Percent.utf8DecodeWithoutBOM percentDecoded
+  let percentDecoded := Percent.percentDecodeStr (← remainingToString)
+  -- Use strict UTF-8 decoding - invalid sequences should fail
+  let domain : String ← match Percent.utf8DecodeWithoutBOMOrFail? percentDecoded with
+    | some s => pure s
+    | none => throw (invalidUrlUnit, none, some "Invalid UTF-8 in host")
   /- 5., 6. -/
   let asciiDomain ← domainToAscii domain false
   /- 7. -/
