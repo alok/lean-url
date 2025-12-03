@@ -144,7 +144,17 @@ def serialize : Host → String
   /- The spec says ".empty = empty string"-/
   | .empty => ""
 
-def publicSuffixListAlgo (s : String): String := sorry
+/--
+Simplified Public Suffix List algorithm.
+Returns the last label of the domain as the public suffix.
+Note: A full implementation would use the actual PSL database to handle
+special cases like .co.uk, github.io, etc.
+-/
+def publicSuffixListAlgo (s : String): Option String :=
+  let domain := if s.endsWith "." then s.dropRight 1 else s
+  let labels := domain.splitOn "."
+  labels.getLast?
+
 /-
 To obtain the public suffix of a host host, run these steps. They return null or a domain representing a portion of host that is included on the Public Suffix List. [PSL]
     If host is not a domain, then return null.
@@ -156,9 +166,12 @@ To obtain the public suffix of a host host, run these steps. They return null or
 def publicSuffix : Host → Option String
   | .domain ⟨s, _⟩ =>
     let trailingDot := if s.endsWith "." then "." else ""
-    let publicSuffix : String := publicSuffixListAlgo s
-    assert! (publicSuffix.all (fun c => c.toNat ≤ 255)) && !(publicSuffix.endsWith ".")
-    some (publicSuffix ++ trailingDot)
+    match publicSuffixListAlgo s with
+    | some psl =>
+      if psl.all (fun c => c.toNat ≤ 255) && !(psl.endsWith ".") then
+        some (psl ++ trailingDot)
+      else none
+    | none => none
   | _ => none
 
 /-
@@ -183,10 +196,24 @@ To obtain the registrable domain of a host host, run these steps. They return nu
     Assert: registrableDomain is an ASCII string that does not end with ".".
     Return registrableDomain and trailingDot concatenated.
 -/
+/--
+Obtain the registrable domain (eTLD+1) of a host.
+Returns the public suffix plus one more label if available.
+E.g., for "www.example.com" with public suffix "com", returns "example.com".
+-/
 def registrableDomain (h : Host) : Option String :=
-  match h.publicSuffix with
-  | none => none
-  | some h' => sorry
+  match h with
+  | .domain ⟨s, _⟩ =>
+    let trailingDot := if s.endsWith "." then "." else ""
+    let domain := if s.endsWith "." then s.dropRight 1 else s
+    let labels := domain.splitOn "."
+    -- Need at least 2 labels for a registrable domain
+    if labels.length < 2 then none
+    else
+      -- Get the last two labels (simplified - doesn't handle multi-part TLDs)
+      let regDomain := ".".intercalate (labels.drop (labels.length - 2))
+      some (regDomain ++ trailingDot)
+  | _ => none
 end Host
 
 /-- From [4.1. URL representation](https://url.spec.whatwg.org/#url-representation):
@@ -240,26 +267,64 @@ def hasCredentials (url : Url) : Bool :=
 structure Origin where
   val : Option String
 
-/-
-4.7
+/--
+4.7 URL's Origin
 
-Opaque origin is `none`, serialized as `null` (?)
+The origin of a URL is an opaque origin (null) or a tuple origin (scheme, host, port).
+For special URLs like http/https/ws/wss, the origin is serialized as scheme://host:port.
+For file URLs, the origin is opaque (null).
+For other URLs, the origin is opaque (null).
 -/
 def origin (url : Url) : Origin :=
-  if let some blob := url.blobUrlEntry
-  then
-    sorry
+  -- Blob URLs derive origin from their entry (simplified to opaque)
+  if url.blobUrlEntry.isSome then
+    { val := none }
+  else if url.scheme == "file" then
+    -- file URLs have opaque origin
+    { val := none }
+  else if url.scheme == "http" ∨ url.scheme == "https" ∨
+          url.scheme == "ws" ∨ url.scheme == "wss" ∨
+          url.scheme == "ftp" then
+    -- Special URLs have tuple origin
+    let hostStr := match url.host with
+      | some h => h.serialize
+      | none => ""
+    let portStr := match url.port with
+      | some p => s!":{p}"
+      | none => ""
+    { val := some s!"{url.scheme}://{hostStr}{portStr}" }
   else
-    sorry
+    -- Other schemes have opaque origin
+    { val := none }
 
 namespace Origin
+
+/-- Serialize an origin, returning "null" for opaque origins -/
+def serialize (o : Origin) : String :=
+  match o.val with
+  | none => "null"
+  | some s => s
+
 end Origin
 
-def protocol (url : Url) : String := sorry
+/-- The protocol getter returns url's scheme followed by ":" -/
+def protocol (url : Url) : String := s!"{url.scheme}:"
 
-def hostname (url : Url) : String := sorry
+/-- The hostname getter returns url's host serialized -/
+def hostname (url : Url) : String :=
+  match url.host with
+  | none => ""
+  | some h => h.serialize
 
-def pathname (url : Url) : String := sorry
+/-- The pathname getter returns url's path serialized -/
+def pathname (url : Url) : String :=
+  match url.path with
+  | .inl p => p
+  | .inr segments => Id.run do
+    let mut out := ""
+    for segment in segments do
+      out := out.append s!"/{segment}"
+    return out
 
 /-
 If url’s query is non-null, append U+003F (?), followed by url’s query, to output.

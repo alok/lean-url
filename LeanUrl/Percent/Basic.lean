@@ -160,6 +160,7 @@ def percentDecodeStr (input : String) : ByteArray :=
 
 /--
 percent-encoded-byte 1.3
+Simplified implementation for UTF-8 only.
 -/
 def percentEncodeAfterEncoding_ (encoding : String) (input : String) (percentEncodeSet : HashSet Char) (spaceAsPlus : Bool := false) : Except String String :=
   if !(encoding.toLower = "utf-8" || encoding.toLower = "utf8")
@@ -167,24 +168,19 @@ def percentEncodeAfterEncoding_ (encoding : String) (input : String) (percentEnc
   else Id.run do
     let inputQueue := input.toUTF8
     let mut output := ""
-    let mut potentialError := some 0
-    while potentialError.isSome do
-      /- since we're not yet supporting alternative encodings. -/
-      let encodeOutput := inputQueue
-      for byte in encodeOutput do
-        if spaceAsPlus && byte == 0x20
-        then
-          output := output.push '\u002B'
-          continue
-        /- 5.3.2 -/
-        let isomorph := Char.ofUInt8 byte
-        /- 5.3.3, 5.3.4; if it's non-ascii or it's ascii and in the encode set, then encode it -/
-        if (!isomorph.isAscii || percentEncodeSet.contains isomorph)
-        then output := (output ++ percentEncodeByte byte)
-        /- 5.3.5 -/
-        else output := output.push isomorph
-        if potentialError.isSome
-        then sorry
+    -- Process each byte of the UTF-8 encoded input
+    for byte in inputQueue do
+      if spaceAsPlus && byte == 0x20
+      then
+        output := output.push '\u002B'
+        continue
+      /- 5.3.2 -/
+      let isomorph := Char.ofUInt8 byte
+      /- 5.3.3, 5.3.4; if it's non-ascii or it's ascii and in the encode set, then encode it -/
+      if (!isomorph.isAscii || percentEncodeSet.contains isomorph)
+      then output := (output ++ percentEncodeByte byte)
+      /- 5.3.5 -/
+      else output := output.push isomorph
     .ok output
 
 /--
