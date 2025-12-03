@@ -97,6 +97,6 @@ def runTests : IO Output := do
   return output
 
 
--- 61 failures remaining, mostly from IDNA.
+-- 20 failures remaining after IDNA implementation (down from 61).
 #eval runTests
 --#eval '\uFDD0'
