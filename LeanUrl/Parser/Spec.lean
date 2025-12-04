@@ -345,10 +345,48 @@ theorem option_match_triple (o : Option Nat) :
       (PostCond.noThrow fun _ => ⌜True⌝) := by
   mvcgen
 
+/-! ## mvcgen patterns from Lean Reference Manual PR #683
+
+Key patterns for verification with mvcgen:
+
+1. **Adequacy theorems** bridge wp semantics to concrete results:
+   - `Id.of_wp_run_eq` for Id monad
+   - `StateM.of_wp_run_eq` for StateM
+   - `EStateM.of_wp_run_eq` for EStateM
+
+2. **Postcondition syntax**:
+   - `⇓ r => ...` - success case only (total correctness)
+   - `⇓? r => ...` - partial correctness (if terminates)
+   - `post⟨success, exception⟩` - explicit exception handling
+
+3. **Loop invariants** with `Invariant.withEarlyReturn`:
+   - `onReturn` - holds after early return
+   - `onContinue` - preserved each iteration
+   - `onExcept` - holds when exception thrown
+
+4. **Proof mode tactics**:
+   - `mvcgen` - generate verification conditions
+   - `mspec` - apply specification lemma step by step
+   - `mpure_intro` - introduce pure hypotheses
+   - `mleave` - leave stateful proof mode
+   - `mframe` - frame hypotheses
+
+5. **PostCond for ParserM**:
+   PostShape = .arg Methods (.except String (.arg Machine .pure))
+   PostCond α ps = (α → Methods → Machine → SPred,   -- success
+                    String → Machine → SPred,         -- exception
+                    Methods → SPred)                  -- reader pure
+-/
+
 /-! ## ParserM-specific specs using Hoare triples
 
 These specs use the full PostShape for ParserM:
   .arg Methods (.except String (.arg Machine .pure))
+
+PostCond structure for exception-aware specs:
+  post⟨fun result methods machine => success_assertion,
+       fun error machine => exception_assertion,
+       fun methods => reader_assertion⟩
 -/
 
 /-- curr? never throws and preserves state -/
