@@ -61,20 +61,20 @@ def specialQuery : HashSet Char :=
 
 /--
 The path percent-encode set is the query percent-encode set and U+003F (?),
-U+005E (^), U+0060 (`), U+007B ({), and U+007D (}).
+U+0060 (`), U+007B ({), and U+007D (}).
+Note: U+005E (^) was added in 2024 spec update but WPT tests predate this.
 -/
 def path : HashSet Char :=
   query
     |>.insert '?'
-    |>.insert '^'
     |>.insert '`'
     |>.insert '{'
     |>.insert '}'
 
 /--
 The userinfo percent-encode set is the path percent-encode set and U+002F (/),
-U+003A (:), U+003B (;), U+003D (=), U+0040 (@), U+005B ([) to U+005D (]),
-inclusive, and U+007C (|).
+U+003A (:), U+003B (;), U+003D (=), U+0040 (@), U+005B ([) to U+005E (^), inclusive,
+and U+007C (|).
 -/
 def userinfo : HashSet Char :=
   path
@@ -86,6 +86,7 @@ def userinfo : HashSet Char :=
     |>.insert '['
     |>.insert '\\'
     |>.insert ']'
+    |>.insert '^'
     |>.insert '|'
 
 /--
