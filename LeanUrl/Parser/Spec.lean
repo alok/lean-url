@@ -1,6 +1,8 @@
 /-
 Verification specs for the URL parser state machine.
 Uses mvcgen + grind to verify safety of Option.get! calls.
+
+Infrastructure based on Std.Do by Sebastian Graf and Markus Himmel.
 -/
 import Std.Tactic.Do
 import LeanUrl.Parser.Basic
@@ -9,6 +11,28 @@ open Std.Do
 open LeanUrl.Parser
 
 namespace LeanUrl.Parser.Spec
+
+/-! ## PostShape for ParserM
+
+ParserM = ReaderT Methods (EStateM String Machine)
+- EStateM String Machine has shape: .except String (.arg Machine .pure)
+- ReaderT Methods adds: .arg Methods (...)
+- Full shape: .arg Methods (.except String (.arg Machine .pure))
+-/
+
+/-- The PostShape for ParserM -/
+abbrev ParserPostShape : PostShape := .arg Methods (.except String (.arg Machine .pure))
+
+/-! ## WP instance derivation
+
+The WP instance for ParserM is automatically derived from:
+- ReaderT.instWP : WP (ReaderT ρ m) (.arg ρ ps) given WP m ps
+- EStateM.instWP : WP (EStateM ε σ) (.except ε (.arg σ .pure))
+-/
+
+-- Verify the instance exists
+#check (inferInstance : WP ParserM ParserPostShape)
+#check (inferInstance : WPMonad ParserM ParserPostShape)
 
 /-! ## Predicates on Machine state -/
 
@@ -288,7 +312,7 @@ def schemeStartStateSafe : ParserM Unit := do
 
 /-! ## mvcgen verification -/
 
-/-- Verify get operation -/
+/-- Verify get operation on simple StateM -/
 theorem get_triple : Triple (get : StateM Nat Nat) ⌜True⌝ (PostCond.noThrow fun _ => ⌜True⌝) := by
   mvcgen
 
@@ -321,16 +345,59 @@ theorem option_match_triple (o : Option Nat) :
       (PostCond.noThrow fun _ => ⌜True⌝) := by
   mvcgen
 
-/-- Verify curr? postcondition with mvcgen -/
-theorem curr?_triple :
+/-! ## ParserM-specific specs using Hoare triples
+
+These specs use the full PostShape for ParserM:
+  .arg Methods (.except String (.arg Machine .pure))
+-/
+
+/-- curr? never throws and preserves state -/
+@[spec]
+theorem Spec.curr?_ParserM :
     Triple (curr? : ParserM (Option Char))
       ⌜True⌝
       (PostCond.noThrow fun _ => ⌜True⌝) := by
   unfold curr?
   mvcgen
-  all_goals try mleave
-  all_goals try grind
-  all_goals sorry -- Reader monad VCs need more infrastructure
+  intro _ m
+  simp only [wp, PostCond.noThrow, PredTrans.pushArg_apply, PredTrans.map_apply]
+  cases m.pointer <;> trivial
+
+/-- peekNext1 never throws -/
+@[spec]
+theorem Spec.peekNext1_ParserM :
+    Triple (peekNext1 : ParserM (Option Char))
+      ⌜True⌝
+      (PostCond.noThrow fun _ => ⌜True⌝) := by
+  unfold peekNext1
+  mvcgen
+  intro _ m
+  simp only [wp, PostCond.noThrow, PredTrans.pushArg_apply, PredTrans.map_apply]
+  cases m.pointer <;> trivial
+
+/-- peekNext2 never throws -/
+@[spec]
+theorem Spec.peekNext2_ParserM :
+    Triple (peekNext2 : ParserM (Option Char))
+      ⌜True⌝
+      (PostCond.noThrow fun _ => ⌜True⌝) := by
+  unfold peekNext2
+  mvcgen
+  intro _ m
+  simp only [wp, PostCond.noThrow, PredTrans.pushArg_apply, PredTrans.map_apply]
+  cases m.pointer <;> trivial
+
+/-- remaining never throws -/
+@[spec]
+theorem Spec.remaining_ParserM :
+    Triple (remaining : ParserM (Option String))
+      ⌜True⌝
+      (PostCond.noThrow fun _ => ⌜True⌝) := by
+  unfold remaining
+  mvcgen
+  intro _ m
+  simp only [wp, PostCond.noThrow, PredTrans.pushArg_apply, PredTrans.map_apply]
+  cases m.pointer <;> trivial
 
 /-- Verify schemeStartState has well-defined behavior -/
 theorem schemeStartState_triple :
@@ -340,7 +407,7 @@ theorem schemeStartState_triple :
   unfold schemeStartState
   mvcgen
   all_goals try grind
-  all_goals sorry -- Complex state machine logic
+  all_goals sorry -- Complex state machine logic needs more infrastructure
 
 /-! ## Key safety theorem for the parser pattern -/
 
