@@ -126,4 +126,28 @@ theorem get!_safe_after_map_check {c? : Option Char} (hcond : (c?.map Char.isAlp
   | none => simp at hcond
   | some c => simp only [Option.get!_some]
 
+/-! ## mvcgen verification of parser functions -/
+
+/-- Simple test: verify curr? postcondition with mvcgen -/
+theorem curr?_triple :
+    Triple (curr? : ParserM (Option Char))
+      ⌜True⌝
+      (PostCond.noThrow fun _ => ⌜True⌝) := by
+  unfold curr?
+  mvcgen
+  all_goals try mleave
+  all_goals try grind
+  -- Remaining goals after mvcgen
+  all_goals sorry
+
+/-- Verify schemeStartState has well-defined behavior -/
+theorem schemeStartState_triple_simple :
+    Triple (schemeStartState : ParserM Unit)
+      ⌜True⌝
+      (PostCond.noThrow fun _ => ⌜True⌝) := by
+  unfold schemeStartState
+  mvcgen
+  all_goals try grind
+  all_goals sorry -- Complex state machine logic needs more specs
+
 end LeanUrl.Parser.Spec
