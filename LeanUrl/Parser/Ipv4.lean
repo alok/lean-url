@@ -69,9 +69,9 @@ def parseUInt32 (s : String) : Except SyntaxViolationLog UInt32 :=
 def parse (s : String) : Except SyntaxViolationLog Std.Net.IPv4Addr :=
   match parseAux.run { input := s.toArray, pointer := 0, address := #[], parts := [], errorLog := #[] } with
   | .ok a _ =>
-    if a < UInt32.size
+    if h : a < UInt32.size
     then
-      match Std.Net.IPv4Addr.ofString (serializeIpv4 a) with
+      match Std.Net.IPv4Addr.ofString (serializeIpv4 ⟨a, h⟩) with
       | some out => .ok out
       | _ => .error (SyntaxViolation.ipv4OutOfRange, none, some s!"failed to convert to std ipv4: {sourceLoc!}")
     else .error (SyntaxViolation.ipv4OutOfRange, none, none)
