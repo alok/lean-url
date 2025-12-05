@@ -496,6 +496,28 @@ theorem Spec.curr?_ParserM :
   simp only [wp, PostCond.noThrow, PredTrans.pushArg_apply, PredTrans.map_apply]
   cases m.pointer <;> trivial
 
+/-- curr? preserves state exactly - strong frame lemma for mvcgen
+
+For ParserPostShape = .arg Methods (.except String (.arg Machine .pure)):
+- Assertion = Methods → Machine → Prop
+- PostCond α = (α → Methods → Machine → Prop) × (String → Machine → Prop) × Unit
+-/
+@[spec]
+theorem Spec.curr?_frame (mInit : Machine) :
+    Triple (curr? : ParserM (Option Char))
+      (fun _methods m => ⌜m = mInit⌝)
+      (⟨fun _c methods m' => ⌜m' = mInit⌝,
+        (fun _err m' => ⌜True⌝, ())⟩ : PostCond (Option Char) ParserPostShape) := by
+  -- Use the direct computation proof from curr?_never_throws
+  intro methods m hInit
+  have ⟨c?, heq⟩ := curr?_never_throws methods m
+  -- heq : curr? methods m = .ok c? m (state preserved!)
+  -- The goal is wp⟦curr?⟧ Q methods m which expands to match (curr? methods m) ...
+  simp only [wp, Triple, PredTrans.pushArg_apply, PredTrans.map_apply]
+  simp only [heq]
+  -- Now goal should be the postcondition applied to (c?, m)
+  exact hInit
+
 /-- peekNext1 never throws -/
 @[spec]
 theorem Spec.peekNext1_ParserM :
