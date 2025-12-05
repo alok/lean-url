@@ -622,6 +622,69 @@ def isValidPortExitState (s : State) : Bool :=
 /-- Helper: State equality is decidable and reflects BEq -/
 theorem state_beq_true_iff (s t : State) : (s == t) = true ↔ s = t := beq_iff_eq
 
+/-! ## mvcgen-based portState specification
+
+The key insight from PR #683: use Triple with a non-trivial postcondition,
+then mvcgen generates verification conditions for each execution path.
+
+For portState, the postcondition captures that on success, the state is
+either pathStart (normal exit) or port (early return preserves state).
+-/
+
+/-- PostCond for portState: on success, state ∈ {pathStart, port} -/
+def portStatePostCond (mInit : Machine) : PostCond Unit ParserPostShape :=
+  ⟨fun () _methods m' => ⌜m'.state = .pathStart ∨ m'.state = mInit.state⌝,
+   (fun _err _m' => ⌜True⌝, ())⟩
+
+/-!
+## mvcgen Analysis and Limitations
+
+The mvcgen tactic from Std.Do generates verification conditions for do-blocks.
+For portState with postcondition "state ∈ {pathStart, port}", mvcgen produces
+VCs for each control-flow path.
+
+### Key Findings:
+
+1. **VC Structure**: mvcgen creates a VC for each path:
+   - vc1: digit branch (modify buffer, preserve state)
+   - vc2-4: terminator paths (set state to pathStart or throw)
+   - vc5+: stateOverride early returns
+
+2. **State Threading Challenge**: mvcgen introduces fresh variables `s✝` for
+   each `get` call. When `curr?` (which is `get >>= pure ∘ f`) runs, the output
+   state `s✝` equals input state `s✝²`, but this isn't automatically propagated.
+
+3. **Workaround Options**:
+   - Break into smaller Hoare triples with explicit frame lemmas
+   - Use `simp_all` with state-equality lemmas
+   - Add explicit state-preservation hypotheses to the Triple
+
+For complex do-blocks like portState, the "compute the result directly" approach
+(used in portState_transitions_on_terminator) may be more tractable than mvcgen.
+-/
+
+/-- Hoare triple spec for portState using mvcgen - EXPERIMENTAL
+
+This demonstrates the mvcgen approach but has limitations with state threading.
+The remaining sorries require proving that intermediate states equal the input
+state through pure operations like `curr?`.
+-/
+theorem portState_triple (m : Machine) (hState : m.state = .port) :
+    Triple (portState : ParserM Unit)
+      (fun _methods m' => ⌜m' = m⌝)  -- precondition: initial machine is m
+      (portStatePostCond m) := by
+  unfold portState portStatePostCond
+  mvcgen
+  -- Most VCs discharge with trivial/grind
+  all_goals try trivial
+  all_goals try (simp only [hState]; trivial)
+  all_goals try grind
+  all_goals (try (right; simp_all only [Prod.mk.eta]; done))
+  all_goals (try (left; rfl))
+  all_goals (try grind +cutsat)
+  -- Remaining: state-threading through curr? (mvcgen limitation)
+  all_goals sorry
+
 /-- The core lemma: portState only sets state to pathStart or leaves it unchanged.
 
 This is proved by analyzing all success paths in portState:
@@ -641,25 +704,21 @@ theorem portState_resultState_spec
   | error e m' => simp only [Option.all_none]
   | ok val m' =>
     simp only [Option.all_some]
-    -- Goal: (m'.state == State.pathStart || m'.state == State.port) = true
+    -- Use adequacy theorem to connect wp semantics to concrete result
+    -- The key is that portState_triple establishes:
+    --   m'.state = .pathStart ∨ m'.state = m.state (= .port)
+    -- which is exactly what we need.
     --
-    -- Analysis of portState success paths:
-    -- 1. Digit early return (line 500): state unchanged → m'.state = m.state = port ✓
-    -- 2. StateOverride early return (line 524): state unchanged → m'.state = m.state = port ✓
-    -- 3. Normal exit (line 529): state := pathStart → m'.state = pathStart ✓
-    --
-    -- The proof extracts this from hr by analyzing the monadic result.
-    -- Since all success paths give state ∈ {port, pathStart}, we use grind
-    -- with the structural equality on State.
-    --
-    -- Key observation: m' is constructed by a sequence of `modify` calls on m,
-    -- where only the final one (line 529) touches state, setting it to pathStart.
-    -- Early returns preserve state = port.
-    simp only [hState, beq_iff_eq]
-    -- Now need: m'.state = pathStart ∨ m'.state = port
-    -- This requires tracing through hr to extract m'.state
-    -- The monadic structure makes this complex; use sorry for now
-    -- A complete proof would use reflection or custom automation
+    -- For now, we trace through the computation manually:
+    -- Looking at hr : portState methods m = .ok val m'
+    -- The success paths in portState are:
+    -- 1. c.isDigit → early return with m' = { m with buffer := ... }
+    --    State: m'.state = m.state = .port ✓
+    -- 2. stateOverride after port parse → early return
+    --    State: m'.state = m.state = .port ✓
+    -- 3. Normal terminator exit → modify state := pathStart
+    --    State: m'.state = .pathStart ✓
+    -- All paths give state ∈ {port, pathStart}
     sorry
 
 /-- Main spec: portState transitions correctly on terminators.
@@ -672,7 +731,7 @@ theorem portState_transitions_on_terminator
     (methods : Methods) (m : Machine)
     (hState : m.state = .port)
     (hc? : isPortTerminator (m.input[m.pointer.toNat]?) m.url.isSpecial)
-    (hBuf : bufferAllDigits m) :
+    (_hBuf : bufferAllDigits m) :
     match portState methods m with
     | .ok () m' => m'.state = .pathStart ∨ m'.state = .port
     | .error _ _ => True
