@@ -102,7 +102,8 @@ def parse' : EStateM SyntaxViolationLog State Unit := do
           if (ipv4Piece.map (fun x => (x > 255 : Bool))).getD false then throw (ipv4InIpv6OutOfRange, none, none)
           /- 6.5.5.4.4 -/
           modify fun m => { m with pointer := m.pointer + 1 }
-        if let some piece := ipv4Piece then
+        if hpiece : ipv4Piece.isSome then
+          let piece := ipv4Piece.get hpiece
           modify fun m => {
             m with
             /- 6.5.5.5 -/
@@ -134,8 +135,9 @@ def parse' : EStateM SyntaxViolationLog State Unit := do
       pieceIndex := m.pieceIndex + 1
     }
   /- 7. -/
-  if let some compress := (← get).compress
-  then
+  let st ← get
+  if hcompress : st.compress.isSome then
+    let compress := st.compress.get hcompress
     /- 7.1, 7.2 -/
     modify fun s => { s with swaps := s.pieceIndex - compress, pieceIndex := 7 }
     /- 7.3 -/

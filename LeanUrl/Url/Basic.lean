@@ -401,8 +401,8 @@ def serialize (url : Url) (excludeFragment : Bool) : String := Id.run do
   /- 1. -/
   let mut out := s!"{url.scheme}:"
   /- 2. -/
-  if let some host := url.host
-  then
+  if hhost : url.host.isSome then
+    let host := url.host.get hhost
     /- 2.1 -/
     out := out ++ "//"
     /- 2.2 -/
@@ -420,7 +420,8 @@ def serialize (url : Url) (excludeFragment : Bool) : String := Id.run do
     /- 2.3 -/
     out := out.append host.serialize
     /- 2.4 -/
-    if let some port := url.port then
+    if hport : url.port.isSome then
+      let port := url.port.get hport
       out := out.push '\u003A'
       out := out.append s!"{port}"
   /- 3. -/
@@ -430,11 +431,13 @@ def serialize (url : Url) (excludeFragment : Bool) : String := Id.run do
   /- 4.-/
   out := out.append url.serializePath
   /- 5. -/
-  if let some query := url.query then
+  if hquery : url.query.isSome then
+    let query := url.query.get hquery
     out := out ++ "?" ++ query
   /- 6. -/
   if !excludeFragment then
-    if let some fragment := url.fragment then
+    if hfrag : url.fragment.isSome then
+      let fragment := url.fragment.get hfrag
       out := out ++ "#" ++ fragment
   /- 7. -/
   return out

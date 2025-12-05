@@ -134,9 +134,104 @@ theorem remaining_spec :
   | .ofNat n => exact ⟨some (m.input.drop n).toString, rfl⟩
   | .negSucc _ => exact ⟨none, rfl⟩
 
-/-! ## Option safety lemmas -/
+/-! ## Option safety lemmas for Option.get -/
 
-/-- Key lemma: Option.map ... .getD false implies isSome -/
+/-- Key lemma: Option.map ... .getD false implies isSome (for Option.get) -/
+@[spec]
+theorem isSome_of_map_getD_true {α : Type} {o : Option α} {f : α → Bool}
+    (h : (o.map f).getD false = true) : o.isSome = true := by
+  cases o with
+  | none => simp at h
+  | some _ => rfl
+
+/-- isSome from equality check -/
+@[spec]
+theorem isSome_of_eq_some {α : Type} [DecidableEq α] {o : Option α} {a : α}
+    (h : o == some a) : o.isSome = true := by
+  cases o with
+  | none => simp at h
+  | some _ => rfl
+
+/-- isSome when negated isNone -/
+@[spec]
+theorem isSome_of_not_isNone {α : Type} {o : Option α}
+    (h : ¬o.isNone) : o.isSome = true := by
+  cases o with
+  | none => simp at h
+  | some _ => rfl
+
+/-- isSome from not-none check -/
+@[spec]
+theorem isSome_of_ne_none {α : Type} [DecidableEq α] {o : Option α}
+    (h : (o != none) = true) : o.isSome = true := by
+  cases o with
+  | none => simp at h
+  | some _ => rfl
+
+/-- isSome from isSome check (trivial but useful) -/
+@[spec]
+theorem isSome_of_isSome_true {α : Type} {o : Option α}
+    (h : o.isSome = true) : o.isSome = true := h
+
+/-- isSome from OR'd condition -/
+@[spec]
+theorem isSome_of_or_cond {α : Type} [DecidableEq α] {o : Option α} {f : α → Bool} {a : α}
+    (h : ((o.map f).getD false || (o == some a)) = true) : o.isSome = true := by
+  cases o with
+  | none => simp at h
+  | some _ => rfl
+
+/-- isSome from AND with isSome on left -/
+@[spec]
+theorem isSome_of_and_isSome {α : Type} {o : Option α} {p : Bool}
+    (h : (o.isSome && p) = true) : o.isSome = true := by
+  simp only [Bool.and_eq_true] at h
+  exact h.1
+
+/-- isSome from negation of first disjunct in c?.isNone || ... -/
+@[spec]
+theorem isSome_of_not_isNone_or {α : Type} {o : Option α} {p : Prop}
+    (h : ¬(o.isNone = true ∨ p)) : o.isSome = true := by
+  have hn : o.isNone ≠ true := fun hx => h (Or.inl hx)
+  cases o with
+  | none => simp at hn
+  | some _ => rfl
+
+/-- Value equality after Option.get when we know it's some a -/
+@[spec]
+theorem Option.get_eq_of_eq_some {α : Type} [DecidableEq α] {o : Option α} {a : α}
+    (heq : o == some a) (h : o.isSome = true) : o.get h = a := by
+  cases o with
+  | none => simp at heq
+  | some x =>
+    simp only [beq_iff_eq, Option.some.injEq] at heq
+    simp only [Option.get_some, heq]
+
+/-- The predicate holds for the extracted value -/
+@[spec]
+theorem pred_of_map_getD_true {α : Type} {o : Option α} {f : α → Bool}
+    (h : (o.map f).getD false = true) (hisSome : o.isSome = true) : f (o.get hisSome) = true := by
+  cases o with
+  | none => simp at hisSome
+  | some a =>
+    simp only [Option.map_some, Option.getD_some] at h
+    simp only [Option.get_some, h]
+
+/-! ## Decidable condition lemmas for `if h : cond then ... else ...` -/
+
+/-- For decidable isSome in if conditions -/
+instance instDecidableIsSomeEqTrue {α : Type} {o : Option α} : Decidable (o.isSome = true) :=
+  inferInstanceAs (Decidable (_ = true))
+
+/-- Convert decidable Bool equality to isSome proof -/
+@[spec]
+theorem isSome_of_decide_map_getD {α : Type} {o : Option α} {f : α → Bool}
+    (h : (o.map f).getD false) : o.isSome = true := by
+  cases o with
+  | none => simp at h
+  | some _ => rfl
+
+/-- Legacy: Option.map ... .getD false implies isSome -/
 theorem option_map_getD_implies_some {α : Type} (o : Option α) (f : α → Bool) :
     (o.map f).getD false = true → o.isSome := by
   intro h
