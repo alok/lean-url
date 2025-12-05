@@ -685,6 +685,142 @@ def isValidPortExitState (s : State) : Bool :=
 /-- Helper: State equality is decidable and reflects BEq -/
 theorem state_beq_true_iff (s t : State) : (s == t) = true ↔ s = t := beq_iff_eq
 
+/-! ## Direct computation lemmas for portState
+
+These lemmas trace through portState's monadic execution for specific conditions,
+establishing exactly what the result is. This is the "symbolic execution" approach.
+-/
+
+/-- portState with c?=none, buffer="", stateOverride=none returns pathStart.
+
+This lemma captures the control flow through portState when:
+- Current character is none (end of input or past bounds)
+- Buffer is empty (no accumulated port digits)
+- No stateOverride
+
+Under these conditions, portState follows the terminator branch and sets state to pathStart.
+
+**Proof strategy**: The monadic computation through ReaderT/EStateM is complex to
+reduce symbolically. This lemma could be proved by:
+1. Extensive unfolding of all monad definitions + careful case analysis
+2. Using a reflection/computation tactic
+3. Testing with concrete values
+-/
+theorem portState_none_emptyBuf_noOverride
+    (methods : Methods) (m : Machine)
+    (hp : ∃ n, m.pointer = .ofNat n)
+    (hc : m.input[m.pointer.toNat]? = none)
+    (hbuf : m.buffer = "")
+    (hso : m.stateOverride = none) :
+    portState methods m = .ok () { m with state := .pathStart, pointer := m.pointer - 1 } := by
+  sorry
+
+/-- portState with c?='/', buffer="", stateOverride=none returns pathStart.
+Similar to none case - '/' is a terminator character. -/
+theorem portState_slash_emptyBuf_noOverride
+    (methods : Methods) (m : Machine)
+    (hp : ∃ n, m.pointer = .ofNat n)
+    (hc : m.input[m.pointer.toNat]? = some '/')
+    (hbuf : m.buffer = "")
+    (hso : m.stateOverride = none) :
+    portState methods m = .ok () { m with state := .pathStart, pointer := m.pointer - 1 } := by
+  sorry
+
+/-- portState with c?='?', buffer="", stateOverride=none returns pathStart.
+Similar to none case - '?' is a terminator character. -/
+theorem portState_question_emptyBuf_noOverride
+    (methods : Methods) (m : Machine)
+    (hp : ∃ n, m.pointer = .ofNat n)
+    (hc : m.input[m.pointer.toNat]? = some '?')
+    (hbuf : m.buffer = "")
+    (hso : m.stateOverride = none) :
+    portState methods m = .ok () { m with state := .pathStart, pointer := m.pointer - 1 } := by
+  sorry
+
+/-- portState with c?='#', buffer="", stateOverride=none returns pathStart.
+Similar to none case - '#' is a terminator character. -/
+theorem portState_hash_emptyBuf_noOverride
+    (methods : Methods) (m : Machine)
+    (hp : ∃ n, m.pointer = .ofNat n)
+    (hc : m.input[m.pointer.toNat]? = some '#')
+    (hbuf : m.buffer = "")
+    (hso : m.stateOverride = none) :
+    portState methods m = .ok () { m with state := .pathStart, pointer := m.pointer - 1 } := by
+  sorry
+
+/-- portState with c?='\\', special URL, buffer="", stateOverride=none returns pathStart.
+Similar to other cases - '\\' is a terminator for special URLs only. -/
+theorem portState_backslash_emptyBuf_noOverride
+    (methods : Methods) (m : Machine)
+    (hp : ∃ n, m.pointer = .ofNat n)
+    (hc : m.input[m.pointer.toNat]? = some '\\')
+    (hbuf : m.buffer = "")
+    (hso : m.stateOverride = none)
+    (hSpecial : m.url.isSpecial) :
+    portState methods m = .ok () { m with state := .pathStart, pointer := m.pointer - 1 } := by
+  sorry
+
+/-- Predicate: buffer contains a valid port number -/
+def validPortBuffer (buf : String) : Prop :=
+  ∃ n, buf.toNat? = some n ∧ n < UInt16.size
+
+/-- When portState succeeds with non-empty buffer and no override, state becomes pathStart.
+
+This follows from the structure of portState:
+1. If buffer != "" and we're in terminator branch
+2. Port parsing succeeds (otherwise throws)
+3. If stateOverride.isNone, execution reaches state := pathStart
+
+The proof traces through the deeply nested ReaderT.bind structure. Key observations:
+- All success paths with stateOverride = none end with `state := .pathStart`
+- Error paths would contradict hr : portState methods m = .ok () m'
+-/
+theorem portState_nonEmptyBuf_noOverride_state
+    (methods : Methods) (m : Machine)
+    (hp : ∃ n, m.pointer = .ofNat n)
+    (hbuf : m.buffer ≠ "")
+    (hso : m.stateOverride = none)
+    (hTerm : isPortTerminator (m.input[m.pointer.toNat]?) m.url.isSpecial)
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    m'.state = .pathStart := by
+  -- For non-empty buffer with stateOverride=none, all success paths end with state := pathStart
+  -- This requires tracing through the complex nested ReaderT structure
+  -- The key insight: after port parsing succeeds, if stateOverride.isNone then state := pathStart
+  sorry  -- Complex nested monadic proof - deferred for now
+
+/-- When portState succeeds with non-empty buffer and override, state unchanged.
+
+This follows from the early return after port parsing when stateOverride.isSome.
+-/
+theorem portState_nonEmptyBuf_withOverride_state
+    (methods : Methods) (m : Machine)
+    (hp : ∃ n, m.pointer = .ofNat n)
+    (hbuf : m.buffer ≠ "")
+    (hso : ∃ so, m.stateOverride = some so)
+    (hTerm : isPortTerminator (m.input[m.pointer.toNat]?) m.url.isSpecial)
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    m'.state = m.state := by
+  obtain ⟨n, hp⟩ := hp
+  obtain ⟨so, hso⟩ := hso
+  -- Trace through portState execution
+  unfold portState curr? at hr
+  simp only [hp, bind, ReaderT.bind, EStateM.bind] at hr
+  -- Similar to above but we hit the early return
+  sorry -- Complex nested match/bind structure
+
+/-- portState with terminator, buffer="", stateOverride=some throws.
+
+When the state override is set and we hit a terminator with an empty buffer,
+portState throws an error (you can't use state override without providing a port). -/
+theorem portState_term_emptyBuf_withOverride_throws
+    (methods : Methods) (m : Machine)
+    (hp : ∃ n, m.pointer = .ofNat n)
+    (hbuf : m.buffer = "")
+    (hso : ∃ so, m.stateOverride = some so)
+    (hTerm : isPortTerminator (m.input[m.pointer.toNat]?) m.url.isSpecial) :
+    ∃ e m', portState methods m = .error e m' := by
+  sorry
+
 /-! ## mvcgen-based portState specification
 
 The key insight from PR #683: use Triple with a non-trivial postcondition,
@@ -760,6 +896,7 @@ All other paths throw, so on .ok the state is in {original, pathStart}.
 theorem portState_resultState_spec
     (methods : Methods) (m : Machine)
     (hState : m.state = .port)
+    (hp : ∃ n, m.pointer = .ofNat n)  -- Pointer is non-negative
     (hc? : isPortTerminator (m.input[m.pointer.toNat]?) m.url.isSpecial) :
     (resultState (portState methods m)).all isValidPortExitState := by
   unfold resultState isValidPortExitState
@@ -797,16 +934,43 @@ theorem portState_resultState_spec
         -- portState sets state := pathStart
         left
         simp only [beq_iff_eq] at hbuf
-        -- With buffer = "" and stateOverride = none, portState on terminator:
-        -- Goes to terminator branch → skips buffer parsing → sets state := pathStart
-        -- This requires tracing through the do-block which is complex
-        -- For now, document as TODO
-        sorry -- TODO: prove via symbolic execution
+        -- Use direct computation lemmas based on terminator character
+        rcases hc? with hNone | hSlash | hQuestion | hHash | ⟨hSpec, hBackslash⟩
+        · -- c? = none (need to convert isNone = true to = none)
+          have hNone' := Option.eq_none_of_isNone hNone
+          have hresult := portState_none_emptyBuf_noOverride methods m hp hNone' hbuf hso
+          rw [hresult] at hr
+          injection hr with _ hm'
+          rw [← hm']
+        · -- c? = some '/'
+          have hresult := portState_slash_emptyBuf_noOverride methods m hp hSlash hbuf hso
+          rw [hresult] at hr
+          injection hr with _ hm'
+          rw [← hm']
+        · -- c? = some '?'
+          have hresult := portState_question_emptyBuf_noOverride methods m hp hQuestion hbuf hso
+          rw [hresult] at hr
+          injection hr with _ hm'
+          rw [← hm']
+        · -- c? = some '#'
+          have hresult := portState_hash_emptyBuf_noOverride methods m hp hHash hbuf hso
+          rw [hresult] at hr
+          injection hr with _ hm'
+          rw [← hm']
+        · -- c? = some '\\' with special URL
+          have hresult := portState_backslash_emptyBuf_noOverride methods m hp hBackslash hbuf hso hSpec
+          rw [hresult] at hr
+          injection hr with _ hm'
+          rw [← hm']
       | some so =>
         -- With stateOverride = some, buffer = "", terminator:
         -- Goes to terminator branch → skips buffer parsing → throws "bad state override"
         -- This is a contradiction since we have hr : portState = .ok
-        sorry -- Contradiction: hr proves success but this path throws
+        simp only [beq_iff_eq] at hbuf
+        have hthrows := portState_term_emptyBuf_withOverride_throws methods m hp hbuf ⟨so, hso⟩ hc?
+        obtain ⟨e, m'', hthrows⟩ := hthrows
+        rw [hthrows] at hr
+        contradiction
     | false =>
       -- Non-empty buffer: port parsing path
       cases hso : m.stateOverride with
@@ -829,6 +993,7 @@ Now that State has LawfulBEq, we can convert BEq to Eq.
 theorem portState_transitions_on_terminator
     (methods : Methods) (m : Machine)
     (hState : m.state = .port)
+    (hp : ∃ n, m.pointer = .ofNat n)  -- Pointer is non-negative
     (hc? : isPortTerminator (m.input[m.pointer.toNat]?) m.url.isSpecial)
     (_hBuf : bufferAllDigits m) :
     match portState methods m with
@@ -836,7 +1001,7 @@ theorem portState_transitions_on_terminator
     | .error _ _ => True
   := by
   -- Use the resultState formulation
-  have hspec := portState_resultState_spec methods m hState hc?
+  have hspec := portState_resultState_spec methods m hState hp hc?
   unfold resultState isValidPortExitState at hspec
   -- Split on the result
   split
