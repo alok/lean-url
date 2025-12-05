@@ -973,16 +973,19 @@ theorem portState_resultState_spec
         contradiction
     | false =>
       -- Non-empty buffer: port parsing path
+      -- Convert (m.buffer == "") = false to m.buffer ≠ ""
+      have hbuf' : m.buffer ≠ "" := ne_of_beq_false hbuf
       cases hso : m.stateOverride with
       | none =>
         -- No stateOverride: parses port, then sets state := pathStart
         left
-        sorry
+        exact portState_nonEmptyBuf_noOverride_state methods m hp hbuf' hso hc? m' hr
       | some so =>
         -- With stateOverride: parses port, early return with state = port
         right
-        -- Need to show m'.state = m.state, which equals .port by hState
-        sorry
+        -- portState_nonEmptyBuf_withOverride_state gives m'.state = m.state
+        have hst := portState_nonEmptyBuf_withOverride_state methods m hp hbuf' ⟨so, hso⟩ hc? m' hr
+        rw [hst, hState]
 
 /-- Main spec: portState transitions correctly on terminators.
 
