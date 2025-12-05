@@ -835,7 +835,9 @@ def fileState : ParserM Unit := do
     let st ← get
     if hbase : st.base.isSome then
       let base := st.base.get hbase
-      if !base.isFile then pure ()
+      if !base.isFile then
+        /- base exists but is not a file: URL, go directly to path state -/
+        modify fun m => { m with state := path, pointer := m.pointer - 1 }
       else
         /-4.1 -/
         modify fun m => {
