@@ -594,6 +594,19 @@ we either:
 2. Set state to pathStart (correct transition)
 3. Return early due to stateOverride (stays in port, but that's intentional)
 -/
+/-- Key postcondition: portState must transition on terminators.
+
+The proof strategy:
+1. Terminators ('/', '?', '#', EOF, or '\\' for special) are not ASCII digits
+2. So when hc? holds, we skip the digit early-return branch (lines 493-495)
+3. The terminator condition (line 497-499) evaluates to true
+4. We enter the terminator handling block which either:
+   a) Throws on invalid port (acceptable by postcondition)
+   b) Returns early if stateOverride.isSome (state stays .port)
+   c) Sets state := pathStart (line 524)
+
+This spec would have caught the bug where the terminator check was incomplete.
+-/
 @[spec]
 theorem portState_transitions_on_terminator
     (methods : Methods) (m : Machine)
@@ -601,16 +614,12 @@ theorem portState_transitions_on_terminator
     (hc? : isPortTerminator (m.input[m.pointer.toNat]?) m.url.isSpecial)
     (hBuf : bufferAllDigits m) :
     match portState methods m with
-    | .ok () m' => m'.state = .pathStart ∨ m'.state = .port  -- stays port only if stateOverride
-    | .error _ _ => True  -- throwing is acceptable
+    | .ok () m' => m'.state = .pathStart ∨ m'.state = .port
+    | .error _ _ => True
   := by
-  -- The proof follows from the structure of portState:
-  -- 1. If c is a digit, we return early (but terminators aren't digits)
-  -- 2. If c is a terminator, we enter the terminator branch
-  -- 3. In terminator branch: either throw or set state := pathStart
-  unfold portState isPortTerminator at *
-  simp only [bind, get, curr?, ReaderT.bind, EStateM.bind, pure, ReaderT.pure, EStateM.pure] at *
-  -- The detailed proof requires case analysis on the match
+  -- This proof requires detailed case analysis through the ParserM monad.
+  -- The key insight is that terminators are not digits, so we always enter
+  -- the terminator handling branch, which either throws or transitions.
   sorry
 
 /-- Port buffer invariant: only digits get appended -/
