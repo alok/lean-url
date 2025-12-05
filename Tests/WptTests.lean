@@ -97,6 +97,6 @@ def runTests : IO Output := do
   return output
 
 
--- 20 failures remaining after IDNA implementation (down from 61).
+-- 3 failures remaining: file: scheme edge cases (file:..., file:.., file:a)
 #eval runTests
 --#eval '\uFDD0'

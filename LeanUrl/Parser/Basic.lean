@@ -487,13 +487,14 @@ def authorityState : ParserM Unit := do
 
 def portState : ParserM Unit := do
   let c? ← curr?
+  /- 1. If c is an ASCII digit, append c to buffer -/
   if hc : c?.isSome then
     let c := c?.get hc
     if c.isDigit then
       modify fun m => { m with buffer := m.buffer.push c }
       return
-  /- 2. -/
-  else if c?.isNone || c? == some '\u002F' || c? == some '\u003F' || c? == some '\u0023'
+  /- 2. Otherwise, if c is EOF, '/', '?', '#', or (special and '\'), or state override -/
+  if c?.isNone || c? == some '\u002F' || c? == some '\u003F' || c? == some '\u0023'
     || ((← get).url.isSpecial && c? == some '\u005C')
     || (← get).stateOverride.isSome
   then
