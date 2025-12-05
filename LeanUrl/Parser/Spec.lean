@@ -564,6 +564,27 @@ theorem schemeStartState_get!_safe (c? : Option Char)
 #check @curr?_spec_some
 #check @get!_safe_after_map_check
 
+/-! ## Dependent State Machine Infrastructure
+
+For proving properties about the parser state machine, we use a dependent
+type approach where valid states carry their invariants.
+-/
+
+/-- Extract the final state from a ParserM result -/
+def resultState : EStateM.Result String Machine Unit → Option State
+  | .ok () m => some m.state
+  | .error _ _ => none
+
+/-- Extract the final machine from a ParserM result -/
+def resultMachine : EStateM.Result String Machine Unit → Option Machine
+  | .ok () m => some m
+  | .error _ _ => none
+
+/-- Result is successful -/
+def resultOk : EStateM.Result String Machine Unit → Bool
+  | .ok () _ => true
+  | .error _ _ => false
+
 /-! ## State Machine Transition Specs
 
 These specs capture the postconditions for parser state transitions,
@@ -575,6 +596,12 @@ def isPortTerminator (c? : Option Char) (isSpecial : Bool) : Prop :=
   c?.isNone ∨ c? = some '/' ∨ c? = some '?' ∨ c? = some '#' ∨
   (isSpecial ∧ c? = some '\\')
 
+/-- Decidable instance for isPortTerminator -/
+instance instDecidableIsPortTerminator (c? : Option Char) (isSpecial : Bool) :
+    Decidable (isPortTerminator c? isSpecial) := by
+  unfold isPortTerminator
+  infer_instance
+
 /-- Predicate: buffer contains only digits -/
 def bufferAllDigits (m : Machine) : Prop :=
   m.buffer.all Char.isDigit
@@ -583,29 +610,40 @@ def bufferAllDigits (m : Machine) : Prop :=
 def stateChangedFromPort (mOld mNew : Machine) : Prop :=
   mOld.state = .port → mNew.state ≠ .port
 
-/-- Key postcondition: portState must transition on terminators
+/-- Valid state transitions from port state -/
+inductive PortTransition : State → Prop
+  | toPathStart : PortTransition .pathStart
+  | stayPort : PortTransition .port  -- only valid with stateOverride
+
+/-- Check if a state is a valid exit state from port -/
+def isValidPortExitState (s : State) : Bool :=
+  s == .pathStart || s == .port
+
+/-- Key postcondition: portState must transition on terminators.
 
 This is the spec that would have caught the bug where `/` in port state
 didn't trigger a state transition.
 
-The proof shows that when we see a terminator (/, ?, #, EOF, or \ for special),
-we either:
-1. Throw an error (acceptable)
-2. Set state to pathStart (correct transition)
-3. Return early due to stateOverride (stays in port, but that's intentional)
--/
-/-- Key postcondition: portState must transition on terminators.
+Alternative formulation using resultState for cleaner proof structure. -/
+theorem portState_resultState_spec
+    (methods : Methods) (m : Machine)
+    (hc? : isPortTerminator (m.input[m.pointer.toNat]?) m.url.isSpecial) :
+    (resultState (portState methods m)).all isValidPortExitState := by
+  unfold resultState isValidPortExitState
+  -- The result is either error (none.all is true) or ok with state in {pathStart, port}
+  cases hr : portState methods m with
+  | error e m' => simp only [Option.all_none]
+  | ok val m' =>
+    simp only [Option.all_some]
+    -- Need to show m'.state == .pathStart || m'.state == .port
+    -- This follows from analyzing portState: on success, state is either
+    -- pathStart (normal transition) or port (stateOverride early return)
+    sorry
 
-The proof strategy:
-1. Terminators ('/', '?', '#', EOF, or '\\' for special) are not ASCII digits
-2. So when hc? holds, we skip the digit early-return branch (lines 493-495)
-3. The terminator condition (line 497-499) evaluates to true
-4. We enter the terminator handling block which either:
-   a) Throws on invalid port (acceptable by postcondition)
-   b) Returns early if stateOverride.isSome (state stays .port)
-   c) Sets state := pathStart (line 524)
+/-- Main spec: portState transitions correctly on terminators.
 
-This spec would have caught the bug where the terminator check was incomplete.
+This theorem reduces to portState_resultState_spec via a simple case split.
+The BEq-to-Eq conversion requires showing that State's BEq is lawful.
 -/
 @[spec]
 theorem portState_transitions_on_terminator
@@ -617,10 +655,15 @@ theorem portState_transitions_on_terminator
     | .ok () m' => m'.state = .pathStart ∨ m'.state = .port
     | .error _ _ => True
   := by
-  -- This proof requires detailed case analysis through the ParserM monad.
-  -- The key insight is that terminators are not digits, so we always enter
-  -- the terminator handling branch, which either throws or transitions.
-  sorry
+  -- Use the resultState formulation
+  have hspec := portState_resultState_spec methods m hc?
+  unfold resultState isValidPortExitState at hspec
+  -- Split on the result
+  split
+  · -- .ok case: follows from hspec + BEq lawfulness for State
+    sorry
+  · -- .error case
+    trivial
 
 /-- Port buffer invariant: only digits get appended -/
 @[spec]
