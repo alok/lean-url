@@ -102,6 +102,47 @@ theorem curr?_never_throws :
   | .ofNat n => exact ⟨m.input[n]?, rfl⟩
   | .negSucc _ => exact ⟨none, rfl⟩
 
+/-- curr? bind simplification for natural pointer - key lemma for monadic reasoning
+    This allows us to "inline" curr? in do-blocks for proofs when pointer ≥ 0 -/
+theorem curr?_bind_ofNat {α : Type} (methods : Methods) (m : Machine) (f : Option Char → ParserM α)
+    (n : Nat) (hp : m.pointer = .ofNat n) :
+    (curr? >>= f) methods m = f (m.input[n]?) methods m := by
+  simp only [bind, ReaderT.bind, EStateM.bind]
+  unfold curr?
+  simp only [hp]
+
+/-- curr? bind simplification - uses the fact that curr? returns the char at pointer position
+    For any pointer, this relates curr? to its actual result -/
+theorem curr?_bind' {α : Type} (methods : Methods) (m : Machine) (f : Option Char → ParserM α) :
+    ∃ c?, curr? methods m = .ok c? m ∧ (curr? >>= f) methods m = f c? methods m := by
+  simp only [bind, ReaderT.bind, EStateM.bind]
+  unfold curr?
+  cases m.pointer with
+  | ofNat n => exact ⟨m.input[n]?, rfl, rfl⟩
+  | negSucc n => exact ⟨none, rfl, rfl⟩
+
+/-! ## Basic ParserM simplification lemmas -/
+
+/-- get returns the current machine state -/
+@[simp]
+theorem get_ParserM (methods : Methods) (m : Machine) :
+    (get : ParserM Machine) methods m = .ok m m := rfl
+
+/-- modify applies function to state -/
+@[simp]
+theorem modify_ParserM (f : Machine → Machine) (methods : Methods) (m : Machine) :
+    (modify f : ParserM Unit) methods m = .ok () (f m) := rfl
+
+/-- pure returns value with unchanged state -/
+@[simp]
+theorem pure_ParserM {α : Type} (a : α) (methods : Methods) (m : Machine) :
+    (pure a : ParserM α) methods m = .ok a m := rfl
+
+/-- throw returns error with unchanged state -/
+@[simp]
+theorem throw_ParserM {α : Type} (e : String) (methods : Methods) (m : Machine) :
+    (throw e : ParserM α) methods m = .error e m := rfl
+
 /-! ## Specifications for peek operations -/
 
 @[spec]
@@ -730,18 +771,54 @@ theorem portState_resultState_spec
     -- The key is that portState_triple establishes:
     --   m'.state = .pathStart ∨ m'.state = m.state (= .port)
     -- which is exactly what we need.
+    -- The key insight: portState on success sets state to either pathStart or keeps it unchanged.
+    -- All success paths in portState lead to:
+    --   1. Early return (digit branch) → state = m.state = port
+    --   2. Early return (stateOverride) → state = m.state = port
+    --   3. Normal exit → state := pathStart
+    -- All other paths throw.
     --
-    -- For now, we trace through the computation manually:
-    -- Looking at hr : portState methods m = .ok val m'
-    -- The success paths in portState are:
-    -- 1. c.isDigit → early return with m' = { m with buffer := ... }
-    --    State: m'.state = m.state = .port ✓
-    -- 2. stateOverride after port parse → early return
-    --    State: m'.state = m.state = .port ✓
-    -- 3. Normal terminator exit → modify state := pathStart
-    --    State: m'.state = .pathStart ✓
-    -- All paths give state ∈ {port, pathStart}
-    sorry
+    -- Use a computational approach: analyze the result directly
+    simp only [beq_iff_eq, Bool.or_eq_true]
+    -- Now goal is: m'.state = State.pathStart ∨ m'.state = State.port
+    -- We need to extract this from hr : portState methods m = .ok val m'
+    --
+    -- Case analysis on the shape of the computation
+    unfold isPortTerminator at hc?
+    -- Since hr gives us a concrete result, trace through portState's branches
+    -- The analysis depends on the current character and machine state
+    cases hbuf : m.buffer == "" with
+    | true =>
+      -- Empty buffer: simpler path
+      cases hso : m.stateOverride with
+      | none =>
+        -- No stateOverride: normal terminator path → pathStart
+        -- With buffer = "", stateOverride = none, and terminator char,
+        -- portState sets state := pathStart
+        left
+        simp only [beq_iff_eq] at hbuf
+        -- With buffer = "" and stateOverride = none, portState on terminator:
+        -- Goes to terminator branch → skips buffer parsing → sets state := pathStart
+        -- This requires tracing through the do-block which is complex
+        -- For now, document as TODO
+        sorry -- TODO: prove via symbolic execution
+      | some so =>
+        -- With stateOverride = some, buffer = "", terminator:
+        -- Goes to terminator branch → skips buffer parsing → throws "bad state override"
+        -- This is a contradiction since we have hr : portState = .ok
+        sorry -- Contradiction: hr proves success but this path throws
+    | false =>
+      -- Non-empty buffer: port parsing path
+      cases hso : m.stateOverride with
+      | none =>
+        -- No stateOverride: parses port, then sets state := pathStart
+        left
+        sorry
+      | some so =>
+        -- With stateOverride: parses port, early return with state = port
+        right
+        -- Need to show m'.state = m.state, which equals .port by hState
+        sorry
 
 /-- Main spec: portState transitions correctly on terminators.
 
