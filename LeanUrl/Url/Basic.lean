@@ -420,10 +420,9 @@ def serialize (url : Url) (excludeFragment : Bool) : String := Id.run do
     /- 2.3 -/
     out := out.append host.serialize
     /- 2.4 -/
-    if !url.port.isNone
-    then
+    if let some port := url.port then
       out := out.push '\u003A'
-      out := out.append s!"{url.port.get!}"
+      out := out.append s!"{port}"
   /- 3. -/
   if url.host.isNone && !url.opaquePath && url.pathSize > 1 && url.pathPfx == some ""
   then
@@ -431,13 +430,12 @@ def serialize (url : Url) (excludeFragment : Bool) : String := Id.run do
   /- 4.-/
   out := out.append url.serializePath
   /- 5. -/
-  if !url.query.isNone
-  then
-    out := out ++ "?" ++ url.query.get!
+  if let some query := url.query then
+    out := out ++ "?" ++ query
   /- 6. -/
-  if !excludeFragment && !url.fragment.isNone
-  then
-    out := out ++ "#" ++ url.fragment.get!
+  if !excludeFragment then
+    if let some fragment := url.fragment then
+      out := out ++ "#" ++ fragment
   /- 7. -/
   return out
 

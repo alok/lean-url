@@ -74,8 +74,8 @@ def parse' : EStateM SyntaxViolationLog State Unit := do
       /- 6.5.4 -/
       modify fun st => { st with numbersSeen := 0 }
       /- 6.5.5 -/
-      while (← curr?).isSome do
-        let c := (← curr?).get!
+      while true do
+        let some c := (← curr?) | break
         /- 6.5.5.1 -/
         let mut ipv4Piece := none
         /- 6.5.5.2 -/
@@ -89,8 +89,8 @@ def parse' : EStateM SyntaxViolationLog State Unit := do
         /- 6.5.5.3 -/
         if !(((← curr?).map Char.isDigit).getD false) then throw (ipv4InIpv6InvalidCodePoint, none, none)
         /- 6.5.5.4 -/
-        while (← curr?).isSome do
-          let c := (← curr?).get!
+        while true do
+          let some c := (← curr?) | break
           if !c.isDigit then break
           let number := c.toNat - 48
           /- 6.5.5.4.2 -/
@@ -102,13 +102,14 @@ def parse' : EStateM SyntaxViolationLog State Unit := do
           if (ipv4Piece.map (fun x => (x > 255 : Bool))).getD false then throw (ipv4InIpv6OutOfRange, none, none)
           /- 6.5.5.4.4 -/
           modify fun m => { m with pointer := m.pointer + 1 }
-        modify fun m => {
-          m with
-          /- 6.5.5.5 -/
-          address := m.address.modify m.pieceIndex (fun x => (x * 0x100) + ipv4Piece.get!)
-          /- 6.5.5.6 -/
-          numbersSeen := m.numbersSeen + 1
-        }
+        if let some piece := ipv4Piece then
+          modify fun m => {
+            m with
+            /- 6.5.5.5 -/
+            address := m.address.modify m.pieceIndex (fun x => (x * 0x100) + piece)
+            /- 6.5.5.6 -/
+            numbersSeen := m.numbersSeen + 1
+          }
         /- 6.5.5.7 -/
         if (← get).numbersSeen == 2 || (← get).numbersSeen == 4
         then modify fun m => { m with pieceIndex := m.pieceIndex + 1}

@@ -148,27 +148,31 @@ def remainingAfterCurr : ParserM String := fun _ s =>
   | _ =>  .ok "" s
 
 def schemeStartState : ParserM Unit := do
-  let c? ← curr?
-  if (c?.map Char.isAlpha).getD false
-  then
-    /- 1. -/
-    modify (fun m => { m with buffer := m.buffer.push c?.get!.toLower, state := .scheme })
-  else if let none := (← get).stateOverride
-  then
-    /- 2. -/
-    modify (fun m => { m with state := .noScheme, pointer := m.pointer - 1 })
-  else
-    throw sourceLoc!
+  match ← curr? with
+  | some c =>
+    if c.isAlpha then
+      /- 1. -/
+      modify fun m => { m with buffer := m.buffer.push c.toLower, state := .scheme }
+    else if let none := (← get).stateOverride then
+      /- 2. -/
+      modify fun m => { m with state := .noScheme, pointer := m.pointer - 1 }
+    else
+      throw sourceLoc!
+  | none =>
+    if let none := (← get).stateOverride then
+      modify fun m => { m with state := .noScheme, pointer := m.pointer - 1 }
+    else
+      throw sourceLoc!
 
 def schemeState : ParserM Unit := do
   let c? ← curr?
   /- 1. -/
-  if (c?.map (·.isAlphanum)).getD false || c? == some '\u002B' || c? == some '\u002D' || c? == some '\u002E'
-  then
-    modify fun m => { m with buffer := m.buffer.push c?.get!.toLower }
-    return
+  if let some c := c? then
+    if c.isAlphanum || c == '\u002B' || c == '\u002D' || c == '\u002E' then
+      modify fun m => { m with buffer := m.buffer.push c.toLower }
+      return
   /- 2. -/
-  else if c? == some '\u003A'
+  if c? == some '\u003A'
   then
     /- 2.1 -/
     if (← get).stateOverride.isSome
@@ -208,10 +212,10 @@ def schemeState : ParserM Unit := do
       modify fun m => { m with state := .file }
     /- 2.6 -/
     else if (← get).url.isSpecial &&
-        (← get).base.isSome &&
-        (← get).base.get!.scheme == (← get).url.scheme
+        ((← get).base.map (·.scheme == (← get).url.scheme)).getD false
     then
-      if !(((← get).base.map Url.schemeIsSpecial).getD false) then throw s!"assertion failed: base should be special at {sourceLoc!}"
+      if let some base := (← get).base then
+        if !base.schemeIsSpecial then throw s!"assertion failed: base should be special at {sourceLoc!}"
       modify fun m => { m with state := specialRelativeOrAuthority }
     /- 2.7 -/
     else if (← get).url.scheme.isSpecialScheme
@@ -255,17 +259,18 @@ def noSchemeState : ParserM Unit := do
   /- 2. -/
   else if basePathIsOpaque && c? == some '\u0023'
   then
-    modify fun m => {
-      m with
-      state := fragment
-      url := {
-        m.url with
-        scheme := m.base.get!.scheme
-        path := m.base.get!.path
-        query := m.base.get!.query
-        fragment := ""
+    if let some base := (← get).base then
+      modify fun m => {
+        m with
+        state := fragment
+        url := {
+          m.url with
+          scheme := base.scheme
+          path := base.path
+          query := base.query
+          fragment := ""
+        }
       }
-    }
 
   else if !(baseSchemeIsFile.getD false)
   /- 3. -/
@@ -386,13 +391,13 @@ def hostState : ParserM Unit := do
         }
       }
       if (← get).stateOverride.isSome then return
-  else
+  else if let some c := c? then
     /- 4.1 -/
-    if c? == some '\u005B' then modify fun m => { m with insideBrackets := true }
+    if c == '\u005B' then modify fun m => { m with insideBrackets := true }
     /- 4.2 -/
-    if c? == some '\u005D' then modify fun m => { m with insideBrackets := false }
+    if c == '\u005D' then modify fun m => { m with insideBrackets := false }
     /- 4.3 -/
-    modify fun m => { m with buffer := m.buffer.push c?.get! }
+    modify fun m => { m with buffer := m.buffer.push c }
 
 abbrev hostNameState := hostState
 
@@ -464,15 +469,15 @@ def authorityState : ParserM Unit := do
       buffer := ""
       state := host
     }
-  else
-    modify fun m => { m with buffer := m.buffer.push c?.get! }
+  else if let some c := c? then
+    modify fun m => { m with buffer := m.buffer.push c }
 
 def portState : ParserM Unit := do
   let c? ← curr?
-  if (c?.map (fun c => c.isDigit)).getD false
-  then
-    modify fun m => { m with buffer := m.buffer.push c?.get! }
-    return
+  if let some c := c? then
+    if c.isDigit then
+      modify fun m => { m with buffer := m.buffer.push c }
+      return
   /- 2. -/
   else if c?.isNone || c? == some '\u002F' || c? == some '\u003F' || c? == some '\u0023'
     || ((← get).url.isSpecial && c? == some '\u005C')
@@ -652,12 +657,12 @@ def pathState : ParserM Unit := do
       url := { m.url with fragment := "" }
     }
   /- 2. -/
-  else
-    if c? != '\u0025' && !(c?.map (fun x => x.isUrlCodePoint)).getD false then modify fun m => { m with errorLog := m.errorLog.push (.invalidUrlUnit, none, some sourceLoc!)}
+  else if let some c := c? then
+    if c != '\u0025' && !c.isUrlCodePoint then modify fun m => { m with errorLog := m.errorLog.push (.invalidUrlUnit, none, some sourceLoc!)}
     let next1 := ((← peekNext1).map (fun c => c.isASCIIHexDigit)).getD false
     let next2 := ((← peekNext2).map (fun c => c.isASCIIHexDigit)).getD false
-    if c? == some '\u0025' && !(next1 && next2) then modify fun m => { m with errorLog := m.errorLog.push (.invalidUrlUnit, none, some sourceLoc!)}
-    let pencode := utf8PercentEncode s!"{c?.get!}" PercentEncodeSets.path
+    if c == '\u0025' && !(next1 && next2) then modify fun m => { m with errorLog := m.errorLog.push (.invalidUrlUnit, none, some sourceLoc!)}
+    let pencode := utf8PercentEncode s!"{c}" PercentEncodeSets.path
     modify fun m => { m with buffer := m.buffer.append pencode }
 
 def opaquePathState : ParserM Unit := do
@@ -687,9 +692,8 @@ def opaquePathState : ParserM Unit := do
     else
       let _ ← appendPath " "
   /- 4. -/
-  else if c?.isSome
+  else if let some c := c?
   then
-    let c := c?.get!
     /- 4.1 -/
     if !(c.isUrlCodePoint) && c != '\u0025' then modify fun m => { m with errorLog := m.errorLog.push (.invalidUrlUnit, none, some sourceLoc!)}
     /- 4.2 -/
@@ -728,11 +732,11 @@ def queryState : ParserM Unit := do
     if c? == some '\u0023'
     then modify fun m => { m with state := fragment, url := { m.url with fragment := "" }}
   /- 3. -/
-  else if c?.isSome
+  else if let some c := c?
   then
-    if !(c?.get!.isUrlCodePoint) && c? != some '\u0025' then modify fun m => { m with errorLog := m.errorLog.push (.invalidUrlUnit, none, some sourceLoc!)}
-    if c? == some '\u0025' && !(← remStartsW2ASCIIHex) then modify fun m => { m with errorLog := m.errorLog.push (.invalidUrlUnit, none, some sourceLoc!)}
-    modify fun m => { m with buffer := m.buffer.append s!"{c?.get!}" }
+    if !c.isUrlCodePoint && c != '\u0025' then modify fun m => { m with errorLog := m.errorLog.push (.invalidUrlUnit, none, some sourceLoc!)}
+    if c == '\u0025' && !(← remStartsW2ASCIIHex) then modify fun m => { m with errorLog := m.errorLog.push (.invalidUrlUnit, none, some sourceLoc!)}
+    modify fun m => { m with buffer := m.buffer.append s!"{c}" }
 
 def fragmentState : ParserM Unit := do
   match (← curr?) with
@@ -759,42 +763,42 @@ def relativeState : ParserM Unit := do
   /- 1. -/
   if ((← get).base.map (Url.isFile)).getD false then throw s!"assert not file: {sourceLoc!}"
   /- 2. -/
-  let base := (← get).base.get!
-  modify fun m => { m with url := { m.url with scheme := base.scheme }}
-  let c? ← curr?
-  /- 3. -/
-  if c? == some '\u002F' then modify fun m => { m with state := relativeSlash }
-  /- 4. -/
-  else if (← get).url.isSpecial && c? == some '\u005C'
-    then modify fun m => { m with state := relativeSlash, errorLog := m.errorLog.push (.invalidReverseSolidus, none, some sourceLoc!)}
-  else
-    /- 5.1 -/
-    modify fun m => {
-      m with
-      url := {
-        m.url with
-        username := base.username
-        password := base.password
-        host := base.host
-        port := base.port
-        path := base.path
-        query := base.query
+  if let some base := (← get).base then
+    modify fun m => { m with url := { m.url with scheme := base.scheme }}
+    let c? ← curr?
+    /- 3. -/
+    if c? == some '\u002F' then modify fun m => { m with state := relativeSlash }
+    /- 4. -/
+    else if (← get).url.isSpecial && c? == some '\u005C'
+      then modify fun m => { m with state := relativeSlash, errorLog := m.errorLog.push (.invalidReverseSolidus, none, some sourceLoc!)}
+    else
+      /- 5.1 -/
+      modify fun m => {
+        m with
+        url := {
+          m.url with
+          username := base.username
+          password := base.password
+          host := base.host
+          port := base.port
+          path := base.path
+          query := base.query
+        }
       }
-    }
-    /- 5.2 -/
-    if c? == some '\u003F'
-    then modify fun m => { m with url := { m.url with query := ""}, state := query }
-    /- 5.3 -/
-    else if c? == some '\u0023'
-    then modify fun m => { m with url := { m.url with fragment := "" }, state := fragment }
-    /- 5.4 -/
-    else if c?.isSome
-    then
-      /- 5.4.1 -/
-      modify fun m => { m with url := { m.url with query := none }}
-      /- 5.4.2 -/
-      let _ ← shortenUrlPath
-      modify fun m => { m with state := path, pointer := m.pointer - 1 }
+      /- 5.2 -/
+      if c? == some '\u003F'
+      then modify fun m => { m with url := { m.url with query := ""}, state := query }
+      /- 5.3 -/
+      else if c? == some '\u0023'
+      then modify fun m => { m with url := { m.url with fragment := "" }, state := fragment }
+      /- 5.4 -/
+      else if c?.isSome
+      then
+        /- 5.4.1 -/
+        modify fun m => { m with url := { m.url with query := none }}
+        /- 5.4.2 -/
+        let _ ← shortenUrlPath
+        modify fun m => { m with state := path, pointer := m.pointer - 1 }
 
 def fileState : ParserM Unit := do
   let c? ← curr?
@@ -807,40 +811,40 @@ def fileState : ParserM Unit := do
     if c? == some '\u005C' then modify fun m => { m with errorLog := m.errorLog.push (.invalidReverseSolidus, none, some sourceLoc!)}
     modify fun m => { m with state := fileSlash }
   /- 4. -/
-  else if ((← get).base.map Url.isFile).getD false
-  then
-    let base := (← get).base.get!
-    /-4.1 -/
-    modify fun m => {
-      m with url := {
-        m.url with
-        host := base.host
-        path := base.path
-        query := base.query
+  else if let some base := (← get).base then
+    if !base.isFile then pure ()
+    else
+      /-4.1 -/
+      modify fun m => {
+        m with url := {
+          m.url with
+          host := base.host
+          path := base.path
+          query := base.query
+        }
       }
-    }
-    /- 4.2 -/
-    if c? == some '\u003F'
-    then modify fun m => { m with state := query, url := { m.url with query := "" }}
-    /- 4.3 -/
-    else if c? == some '\u0023' then modify fun m => { m with state := fragment, url := { m.url with fragment := "" }}
-    /- 4.4 -/
-    else if c?.isSome
-    then
-      /- 4.4.1 -/
-      modify fun m => { m with url := { m.url with query := none }}
-      /- 4.4.2 -/
-      let some rem ← remaining | throw s!"early EOF: {sourceLoc!}"
-      if !startsWithWindowsDriveLetter rem
+      /- 4.2 -/
+      if c? == some '\u003F'
+      then modify fun m => { m with state := query, url := { m.url with query := "" }}
+      /- 4.3 -/
+      else if c? == some '\u0023' then modify fun m => { m with state := fragment, url := { m.url with fragment := "" }}
+      /- 4.4 -/
+      else if c?.isSome
       then
-        let _ ← shortenUrlPath
-      else
-        /- 4.4.3.1 -/
-        modify fun m => { m with errorLog := m.errorLog.push (.fileInvalidWindowsDriveLetter, none, sourceLoc!) }
-        /- 4.4.3.2 -/
-        modify fun m => { m with url := { m.url with path := .inr #[] }}
-      /- 4.4.4 -/
-      modify fun m => { m with state := path, pointer := m.pointer - 1 }
+        /- 4.4.1 -/
+        modify fun m => { m with url := { m.url with query := none }}
+        /- 4.4.2 -/
+        let some rem ← remaining | throw s!"early EOF: {sourceLoc!}"
+        if !startsWithWindowsDriveLetter rem
+        then
+          let _ ← shortenUrlPath
+        else
+          /- 4.4.3.1 -/
+          modify fun m => { m with errorLog := m.errorLog.push (.fileInvalidWindowsDriveLetter, none, sourceLoc!) }
+          /- 4.4.3.2 -/
+          modify fun m => { m with url := { m.url with path := .inr #[] }}
+        /- 4.4.4 -/
+        modify fun m => { m with state := path, pointer := m.pointer - 1 }
   /- 5. -/
   else
     modify fun m => { m with state := path, pointer := m.pointer - 1 }
@@ -856,27 +860,25 @@ def fileSlashState : ParserM Unit := do
   /- 2. -/
   else
     /- 2.1 -/
-    if ((← get).base.map Url.isFile).getD false
-    then
-      let base := (← get).base.get!
-      /- 2.1.1 -/
-      modify fun m => { m with url := { m.url with host := base.host }}
-      /- 2.1.2 -/
-      let some rem ← remaining | throw s!"early EOF: {sourceLoc!}"
-      let doesntStartWith := !startsWithWindowsDriveLetter rem
-      let basePath0Is :=
-        match base.path with
-        | .inl _ => false
-        | .inr xs =>
-          (xs[0]?.map (fun path => isNormalizedWindowsDriveLetter path)).getD false
-
-      if doesntStartWith && basePath0Is
-      then
-        let toPush :=
+    if let some base := (← get).base then
+      if base.isFile then
+        /- 2.1.1 -/
+        modify fun m => { m with url := { m.url with host := base.host }}
+        /- 2.1.2 -/
+        let some rem ← remaining | throw s!"early EOF: {sourceLoc!}"
+        let doesntStartWith := !startsWithWindowsDriveLetter rem
+        let basePath0Is :=
           match base.path with
-          | .inr xs => xs[0]!
-          | _ => panic "should be unreachable"
-        let _ ← appendPath toPush
+          | .inl _ => false
+          | .inr xs =>
+            (xs[0]?.map (fun path => isNormalizedWindowsDriveLetter path)).getD false
+
+        if doesntStartWith && basePath0Is then
+          match base.path with
+          | .inr xs =>
+            if let some first := xs[0]? then
+              let _ ← appendPath first
+          | _ => pure ()
     modify fun m => { m with state := path, pointer := m.pointer - 1 }
 
 def fileHostState : ParserM Unit := do
@@ -907,8 +909,8 @@ def fileHostState : ParserM Unit := do
       modify fun m => { m with url := { m.url with host := host }}
       if (← get).stateOverride.isSome then return
       modify fun m => { m with buffer := "", state := pathStart }
-  else
-    modify fun m => { m with buffer := m.buffer.append s!"{c?.get!}" }
+  else if let some c := c? then
+    modify fun m => { m with buffer := m.buffer.append s!"{c}" }
 
 partial def basicParserRec : ParserM Unit := do
   match (← get).state with
