@@ -48,7 +48,12 @@ inductive State
   | opaquePath
   | query
   | fragment
-deriving BEq, Repr, Inhabited
+deriving BEq, Repr, Inhabited, DecidableEq
+
+/-- State's BEq is lawful (structural equality) -/
+instance : LawfulBEq State where
+  eq_of_beq {a b} h := by cases a <;> cases b <;> first | rfl | contradiction
+  rfl := by intro a; cases a <;> rfl
 
 open State
 
