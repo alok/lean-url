@@ -1042,7 +1042,131 @@ theorem portState_term_emptyBuf_withOverride_throws
     (hso : ∃ so, m.stateOverride = some so)
     (hTerm : isPortTerminator (m.input[m.pointer.toNat]?) m.url.isSpecial) :
     ∃ e m', portState methods m = .error e m' := by
-  sorry
+  obtain ⟨n, hp⟩ := hp
+  obtain ⟨so, hso⟩ := hso
+  have hc' : m.input[m.pointer.toNat]? = m.input[n]? := by simp only [hp, Int.toNat.eq_1]
+
+  -- Analyze what c? could be based on hTerm
+  -- isPortTerminator c? isSpecial := c?.isNone ∨ c? = some '/' ∨ c? = some '?' ∨ c? = some '#' ∨ (isSpecial ∧ c? = some '\\')
+  unfold isPortTerminator at hTerm
+  -- Convert Bool.isNone to Option equality
+  simp only [Option.isNone_iff_eq_none] at hTerm
+  rcases hTerm with hNone | hSlash | hQuestion | hHash | ⟨hSpecial, hBackslash⟩
+
+  -- Helper: convert hc' to use n
+  all_goals
+    have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+    unfold portState
+    simp only [bind, ReaderT.bind, EStateM.bind]
+
+  -- Case: c? = none (EOF)
+  · have hNone' : m.input[n]? = none := by rw [← hc']; rw [hNone]
+    have h_curr : curr? methods m = .ok none m := by
+      unfold curr?
+      simp only [hp, hNone']
+    rw [h_curr]; simp only []
+    simp only [Option.isSome_none, dif_neg (Bool.false_ne_true)]
+    simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+    rw [hget]; simp only []
+    rw [hget]; simp only []
+    simp only [Option.isNone_none, Bool.true_or]
+    simp only [if_true]
+    simp only [bind, ReaderT.bind, EStateM.bind]
+    rw [hget]; simp only []
+    simp only [hbuf, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+    simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+    rw [hget]; simp only []
+    simp only [hso, Option.isSome_some, ↓reduceIte]
+    exact ⟨_, _, rfl⟩
+
+  -- Case: c? = some '/'
+  · have hSlash' : m.input[n]? = some '/' := by rw [← hc']; rw [hSlash]
+    have h_curr : curr? methods m = .ok (some '/') m := by
+      unfold curr?
+      simp only [hp, hSlash']
+    rw [h_curr]; simp only []
+    simp only [Option.isSome_some, dite_true, Option.get_some]
+    have hNotDigit : '/'.isDigit = false := by native_decide
+    simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte]
+    simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+    rw [hget]; simp only []
+    rw [hget]; simp only []
+    simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, Bool.true_or]
+    simp only [if_true]
+    simp only [bind, ReaderT.bind, EStateM.bind]
+    rw [hget]; simp only []
+    simp only [hbuf, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+    simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+    rw [hget]; simp only []
+    simp only [hso, Option.isSome_some, ↓reduceIte]
+    exact ⟨_, _, rfl⟩
+
+  -- Case: c? = some '?'
+  · have hQuestion' : m.input[n]? = some '?' := by rw [← hc']; rw [hQuestion]
+    have h_curr : curr? methods m = .ok (some '?') m := by
+      unfold curr?
+      simp only [hp, hQuestion']
+    rw [h_curr]; simp only []
+    simp only [Option.isSome_some, dite_true, Option.get_some]
+    have hNotDigit : '?'.isDigit = false := by native_decide
+    simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte]
+    simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+    rw [hget]; simp only []
+    rw [hget]; simp only []
+    simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, Bool.true_or, Bool.or_true]
+    simp only [if_true]
+    simp only [bind, ReaderT.bind, EStateM.bind]
+    rw [hget]; simp only []
+    simp only [hbuf, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+    simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+    rw [hget]; simp only []
+    simp only [hso, Option.isSome_some, ↓reduceIte]
+    exact ⟨_, _, rfl⟩
+
+  -- Case: c? = some '#'
+  · have hHash' : m.input[n]? = some '#' := by rw [← hc']; rw [hHash]
+    have h_curr : curr? methods m = .ok (some '#') m := by
+      unfold curr?
+      simp only [hp, hHash']
+    rw [h_curr]; simp only []
+    simp only [Option.isSome_some, dite_true, Option.get_some]
+    have hNotDigit : '#'.isDigit = false := by native_decide
+    simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte]
+    simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+    rw [hget]; simp only []
+    rw [hget]; simp only []
+    simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, Bool.true_or, Bool.or_true]
+    simp only [if_true]
+    simp only [bind, ReaderT.bind, EStateM.bind]
+    rw [hget]; simp only []
+    simp only [hbuf, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+    simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+    rw [hget]; simp only []
+    simp only [hso, Option.isSome_some, ↓reduceIte]
+    exact ⟨_, _, rfl⟩
+
+  -- Case: c? = some '\\' with isSpecial
+  · have hBackslash' : m.input[n]? = some '\\' := by rw [← hc']; rw [hBackslash]
+    have h_curr : curr? methods m = .ok (some '\\') m := by
+      unfold curr?
+      simp only [hp, hBackslash']
+    rw [h_curr]; simp only []
+    simp only [Option.isSome_some, dite_true, Option.get_some]
+    have hNotDigit : '\\'.isDigit = false := by native_decide
+    simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte]
+    simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+    rw [hget]; simp only []
+    rw [hget]; simp only []
+    simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, hSpecial, hso, Option.isSome_some]
+    simp only [Bool.true_and, Bool.or_true, Bool.or_false]
+    simp only [if_true]
+    simp only [bind, ReaderT.bind, EStateM.bind]
+    rw [hget]; simp only []
+    simp only [hbuf, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+    simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+    rw [hget]; simp only []
+    simp only [hso, Option.isSome_some, ↓reduceIte]
+    exact ⟨_, _, rfl⟩
 
 /-! ## mvcgen-based portState specification
 
