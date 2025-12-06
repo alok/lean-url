@@ -713,7 +713,59 @@ theorem portState_none_emptyBuf_noOverride
     (hbuf : m.buffer = "")
     (hso : m.stateOverride = none) :
     portState methods m = .ok () { m with state := .pathStart, pointer := m.pointer - 1 } := by
-  sorry
+  -- Extract n from existential
+  obtain ⟨n, hp⟩ := hp
+  -- Convert hc to use n instead of m.pointer.toNat
+  have hc' : m.input[n]? = none := by simp only [hp, Int.toNat.eq_1] at hc; exact hc
+
+  -- Unfold portState and bind structure
+  unfold portState
+  simp only [bind, ReaderT.bind, EStateM.bind]
+
+  -- Prove curr? returns none
+  have h_curr : curr? methods m = .ok none m := by
+    unfold curr?
+    simp only [hp, hc']
+
+  rw [h_curr]
+  simp only []
+
+  -- Reduce Option.isSome none and take else branch
+  simp only [Option.isSome_none, Option.isNone_none]
+  simp only [dif_neg (Bool.false_ne_true)]
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+
+  -- Reduce get calls
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  rw [hget]; simp only []
+  rw [hget]; simp only []
+
+  -- true || ... = true => take then branch
+  simp only [Bool.true_or]
+  simp only [if_true]
+
+  simp only [bind, ReaderT.bind, EStateM.bind]
+  rw [hget]; simp only []
+
+  -- buffer = "" so bne returns false
+  simp only [hbuf, bne_self_eq_false]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+  rw [hget]; simp only []
+
+  -- stateOverride = none so isSome is false
+  simp only [hso, Option.isSome_none, Bool.false_eq_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+
+  -- modify reduces by rfl
+  have hmod : ∀ (f : Machine → Machine), (modify f : ParserM Unit) methods m = .ok () (f m) := fun _ => rfl
+  rw [hmod]
+
+  -- Structure equality - both sides represent the same Machine update
+  -- Need to show the modify result equals the RHS with missing optional fields
+  simp only [hbuf, hso]
 
 /-- portState with c?='/', buffer="", stateOverride=none returns pathStart.
 Similar to none case - '/' is a terminator character. -/
@@ -724,7 +776,63 @@ theorem portState_slash_emptyBuf_noOverride
     (hbuf : m.buffer = "")
     (hso : m.stateOverride = none) :
     portState methods m = .ok () { m with state := .pathStart, pointer := m.pointer - 1 } := by
-  sorry
+  obtain ⟨n, hp⟩ := hp
+  have hc' : m.input[n]? = some '/' := by simp only [hp, Int.toNat.eq_1] at hc; exact hc
+
+  unfold portState
+  simp only [bind, ReaderT.bind, EStateM.bind]
+
+  -- curr? returns some '/'
+  have h_curr : curr? methods m = .ok (some '/') m := by
+    unfold curr?
+    simp only [hp, hc']
+
+  rw [h_curr]
+  simp only []
+
+  -- Reduce the outer dite (c?.isSome = true)
+  simp only [Option.isSome_some]
+  -- dite True _ _ = first branch
+  simp only [dite_true]
+
+  -- '/' is not a digit: '/'.val = 47, not in [48, 57]
+  simp only [Option.get_some]
+  -- Char.isDigit evaluates to false for '/'
+  have hNotDigit : '/'.isDigit = false := by native_decide
+  simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte]
+
+  -- Reduce pure >>= and bind structure
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+
+  -- Reduce get calls
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  rw [hget]; simp only []
+  rw [hget]; simp only []
+
+  -- The terminator condition: (some '/').isNone || some '/' == some '/' || ... = true
+  -- some '/' == some '/' is true, so the whole thing is true
+  simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, Bool.true_or]
+  simp only [if_true]
+
+  simp only [bind, ReaderT.bind, EStateM.bind]
+  rw [hget]; simp only []
+
+  -- buffer = "" so bne returns false
+  simp only [hbuf, bne_self_eq_false]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+  rw [hget]; simp only []
+
+  -- stateOverride = none so isSome is false
+  simp only [hso, Option.isSome_none, Bool.false_eq_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+
+  -- modify reduces by rfl
+  have hmod : ∀ (f : Machine → Machine), (modify f : ParserM Unit) methods m = .ok () (f m) := fun _ => rfl
+  rw [hmod]
+  simp only [hbuf, hso]
 
 /-- portState with c?='?', buffer="", stateOverride=none returns pathStart.
 Similar to none case - '?' is a terminator character. -/
@@ -735,7 +843,46 @@ theorem portState_question_emptyBuf_noOverride
     (hbuf : m.buffer = "")
     (hso : m.stateOverride = none) :
     portState methods m = .ok () { m with state := .pathStart, pointer := m.pointer - 1 } := by
-  sorry
+  obtain ⟨n, hp⟩ := hp
+  have hc' : m.input[n]? = some '?' := by simp only [hp, Int.toNat.eq_1] at hc; exact hc
+
+  unfold portState
+  simp only [bind, ReaderT.bind, EStateM.bind]
+
+  have h_curr : curr? methods m = .ok (some '?') m := by
+    unfold curr?
+    simp only [hp, hc']
+
+  rw [h_curr]
+  simp only []
+  simp only [Option.isSome_some]
+  simp only [dite_true]
+  simp only [Option.get_some]
+  have hNotDigit : '?'.isDigit = false := by native_decide
+  simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  rw [hget]; simp only []
+  rw [hget]; simp only []
+
+  -- Terminator: some '?' == some '?' is true → condition contains || true || → true
+  simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true]
+  -- (X || true || Y) = true reduces via Bool.true_or
+  simp only [Bool.true_or, Bool.or_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, EStateM.bind]
+  rw [hget]; simp only []
+  simp only [hbuf, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+  rw [hget]; simp only []
+  simp only [hso, Option.isSome_none, Bool.false_eq_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+  have hmod : ∀ (f : Machine → Machine), (modify f : ParserM Unit) methods m = .ok () (f m) := fun _ => rfl
+  rw [hmod]
+  simp only [hbuf, hso]
 
 /-- portState with c?='#', buffer="", stateOverride=none returns pathStart.
 Similar to none case - '#' is a terminator character. -/
@@ -746,7 +893,45 @@ theorem portState_hash_emptyBuf_noOverride
     (hbuf : m.buffer = "")
     (hso : m.stateOverride = none) :
     portState methods m = .ok () { m with state := .pathStart, pointer := m.pointer - 1 } := by
-  sorry
+  obtain ⟨n, hp⟩ := hp
+  have hc' : m.input[n]? = some '#' := by simp only [hp, Int.toNat.eq_1] at hc; exact hc
+
+  unfold portState
+  simp only [bind, ReaderT.bind, EStateM.bind]
+
+  have h_curr : curr? methods m = .ok (some '#') m := by
+    unfold curr?
+    simp only [hp, hc']
+
+  rw [h_curr]
+  simp only []
+  simp only [Option.isSome_some]
+  simp only [dite_true]
+  simp only [Option.get_some]
+  have hNotDigit : '#'.isDigit = false := by native_decide
+  simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  rw [hget]; simp only []
+  rw [hget]; simp only []
+
+  -- Terminator: some '#' == some '#' is true → condition contains || true || → true
+  simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true]
+  simp only [Bool.true_or, Bool.or_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, EStateM.bind]
+  rw [hget]; simp only []
+  simp only [hbuf, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+  rw [hget]; simp only []
+  simp only [hso, Option.isSome_none, Bool.false_eq_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+  have hmod : ∀ (f : Machine → Machine), (modify f : ParserM Unit) methods m = .ok () (f m) := fun _ => rfl
+  rw [hmod]
+  simp only [hbuf, hso]
 
 /-- portState with c?='\\', special URL, buffer="", stateOverride=none returns pathStart.
 Similar to other cases - '\\' is a terminator for special URLs only. -/
@@ -758,7 +943,45 @@ theorem portState_backslash_emptyBuf_noOverride
     (hso : m.stateOverride = none)
     (hSpecial : m.url.isSpecial) :
     portState methods m = .ok () { m with state := .pathStart, pointer := m.pointer - 1 } := by
-  sorry
+  obtain ⟨n, hp⟩ := hp
+  have hc' : m.input[n]? = some '\\' := by simp only [hp, Int.toNat.eq_1] at hc; exact hc
+
+  unfold portState
+  simp only [bind, ReaderT.bind, EStateM.bind]
+
+  have h_curr : curr? methods m = .ok (some '\\') m := by
+    unfold curr?
+    simp only [hp, hc']
+
+  rw [h_curr]
+  simp only []
+  simp only [Option.isSome_some]
+  simp only [dite_true]
+  simp only [Option.get_some]
+  have hNotDigit : '\\'.isDigit = false := by native_decide
+  simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  rw [hget]; simp only []
+  rw [hget]; simp only []
+
+  -- Terminator: m.url.isSpecial && some '\\' == some '\\' is true
+  simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, hSpecial, hso, Option.isSome_none]
+  simp only [Bool.true_and, Bool.true_or, Bool.or_true, Bool.or_false, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, EStateM.bind]
+  rw [hget]; simp only []
+  simp only [hbuf, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+  rw [hget]; simp only []
+  simp only [hso, Option.isSome_none, Bool.false_eq_true, ↓reduceIte]
+
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure]
+  have hmod : ∀ (f : Machine → Machine), (modify f : ParserM Unit) methods m = .ok () (f m) := fun _ => rfl
+  rw [hmod]
+  simp only [hbuf, hso]
 
 /-- Predicate: buffer contains a valid port number -/
 def validPortBuffer (buf : String) : Prop :=
