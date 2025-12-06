@@ -1515,7 +1515,41 @@ theorem pathStartState_to_path_special
     | .ok () m' => m'.state = .path
     | .error _ _ => True
   := by
-  sorry
+  -- When url.isSpecial, pathStartState always sets state := path
+  unfold pathStartState
+  simp only [bind, ReaderT.bind, EStateM.bind]
+  -- curr? first
+  simp only [curr?, get_ParserM]
+  -- Cases on m.pointer for curr?
+  cases hptr : m.pointer with
+  | ofNat n =>
+    simp only [hptr]
+    -- After curr?, we check if isSpecial
+    simp only [get_ParserM, hSpecial, ↓reduceIte]
+    -- Now in the isSpecial branch: optionally log error, then set state := path
+    -- c? == '\u005C' check for errorLog push - split on this Bool condition
+    by_cases hBackslash : (m.input[n]? == some '\\') = true
+    · -- backslash case: logs error then sets state := path
+      simp only [hBackslash, ↓reduceIte, bind, ReaderT.bind, EStateM.bind, modify_ParserM]
+      -- After state := path, check pointer adjustment
+      by_cases hPtrAdj : (m.input[n]? != some '/' && m.input[n]? != some '\\') = true
+      · simp only [hPtrAdj, ↓reduceIte, modify_ParserM]
+      · simp only [hPtrAdj, Bool.false_eq_true, ↓reduceIte, pure, ReaderT.pure, EStateM.pure]
+    · -- not backslash case: skips error log, sets state := path
+      simp only [hBackslash, Bool.false_eq_true, ↓reduceIte, bind, ReaderT.bind, EStateM.bind, pure, ReaderT.pure, EStateM.pure, modify_ParserM]
+      by_cases hPtrAdj : (m.input[n]? != some '/' && m.input[n]? != some '\\') = true
+      · simp only [hPtrAdj, ↓reduceIte, modify_ParserM]
+      · simp only [hPtrAdj, Bool.false_eq_true, ↓reduceIte, pure, ReaderT.pure, EStateM.pure]
+  | negSucc n =>
+    simp only [hptr]
+    -- After curr?, we check if isSpecial
+    simp only [get_ParserM, hSpecial, ↓reduceIte]
+    by_cases hBackslash : (none == some '\\') = true
+    · simp at hBackslash  -- contradiction: none ≠ some
+    · simp only [hBackslash, Bool.false_eq_true, ↓reduceIte, bind, ReaderT.bind, EStateM.bind, pure, ReaderT.pure, EStateM.pure, modify_ParserM]
+      by_cases hPtrAdj : (none != some '/' && none != some '\\') = true
+      · simp only [hPtrAdj, ↓reduceIte, modify_ParserM]
+      · simp only [hPtrAdj, Bool.false_eq_true, ↓reduceIte, pure, ReaderT.pure, EStateM.pure]
 
 /-! ## Serialization Roundtrip (partial) -/
 
