@@ -1433,7 +1433,13 @@ theorem portState_valid_port
     | .ok () m' => m'.url.port.isNone ∨ (∃ p, m'.url.port = some p)
     | .error _ _ => True
   := by
-  sorry
+  -- The postcondition is trivially true: every Option is either none or some
+  split
+  · rename_i m' _  -- ok case
+    cases m'.url.port with
+    | none => left; rfl
+    | some p => right; exact ⟨p, rfl⟩
+  · trivial
 
 /-! ## General State Machine Progress -/
 
