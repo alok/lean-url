@@ -1007,38 +1007,35 @@ theorem portState_nonEmptyBuf_noOverride_state
     (hTerm : isPortTerminator (m.input[m.pointer.toNat]?) m.url.isSpecial)
     (m' : Machine) (hr : portState methods m = .ok () m') :
     m'.state = .pathStart := by
-  -- Strategy: Since hr says portState succeeds, and we have buffer ≠ "" with stateOverride = none,
-  -- the only success path goes through the final modify which sets state := pathStart.
+  -- Use case analysis on the terminator type
   obtain ⟨n, hp⟩ := hp
+  have hc' : m.input[m.pointer.toNat]? = m.input[n]? := by simp only [hp, Int.toNat.eq_1]
 
-  -- Unfold isPortTerminator to understand what c? could be
   unfold isPortTerminator at hTerm
   simp only [Option.isNone_iff_eq_none] at hTerm
 
-  -- Get the character from input
-  have hc' : m.input[m.pointer.toNat]? = m.input[n]? := by simp only [hp, Int.toNat.eq_1]
-  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  -- Case analysis on which terminator character we have
+  rcases hTerm with hNone | hSlash | hQuestion | hHash | ⟨hSpecial, hBackslash⟩
 
-  -- The result structure for portState with buffer ≠ "" and stateOverride = none:
-  -- After port parsing succeeds (required for .ok), we eventually reach:
-  -- modify fun m => { m with state := pathStart, pointer := m.pointer - 1 }
-  --
-  -- Key insight: Since hr : portState methods m = .ok () m', the execution must have:
-  -- 1. Entered terminator branch (hTerm ensures this)
-  -- 2. Entered buffer != "" branch (hbuf ensures this)
-  -- 3. Port parsing succeeded (otherwise .error, not .ok)
-  -- 4. Skipped early return (stateOverride.isNone from hso)
-  -- 5. Skipped throw (stateOverride.isNone from hso)
-  -- 6. Reached final modify, setting m'.state = pathStart
+  -- Case: EOF (input[n]? = none)
+  · have hc : m.input[n]? = none := by rw [← hc']; exact hNone
+    exact portState_eof_nonEmptyBuf_noOverride_pathStart_noValid methods m n hp hc hbuf hso m' hr
 
-  -- Unfold portState in hr and simplify
-  unfold portState at hr
-  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  -- Case: slash (input[n]? = some '/')
+  · have hc : m.input[n]? = some '/' := by rw [← hc']; exact hSlash
+    exact portState_slash_nonEmptyBuf_noOverride_pathStart methods m n hp hc hbuf hso m' hr
 
-  -- The structure is complex - each successful path through portState with our hypotheses
-  -- ends with m'.state = .pathStart. This follows from tracing the execution.
-  -- For now, we leave this as sorry to indicate it requires more infrastructure.
-  sorry
+  -- Case: question (input[n]? = some '?')
+  · have hc : m.input[n]? = some '?' := by rw [← hc']; exact hQuestion
+    exact portState_question_nonEmptyBuf_noOverride_pathStart methods m n hp hc hbuf hso m' hr
+
+  -- Case: hash (input[n]? = some '#')
+  · have hc : m.input[n]? = some '#' := by rw [← hc']; exact hHash
+    exact portState_hash_nonEmptyBuf_noOverride_pathStart methods m n hp hc hbuf hso m' hr
+
+  -- Case: backslash with isSpecial (input[n]? = some '\\' and m.url.isSpecial)
+  · have hc : m.input[n]? = some '\\' := by rw [← hc']; exact hBackslash
+    exact portState_backslash_nonEmptyBuf_noOverride_pathStart methods m n hp hc hSpecial hbuf hso m' hr
 
 /-- When portState succeeds with non-empty buffer and override, state unchanged.
 

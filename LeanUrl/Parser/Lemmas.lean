@@ -631,7 +631,7 @@ theorem portState_eof_nonEmptyBuf_noOverride_success_pathStart
   simp only [bind, ReaderT.bind, EStateM.bind] at hr
   simp only [hget] at hr
   -- Port parsing: we know it succeeds from hValid
-  simp only [hport, Option.some_bind, hsize, ↓reduceIte] at hr
+  simp only [hport, Option.bind_some, hsize, ↓reduceIte] at hr
   -- Now we have match some port_ with | some port_ => ... | none => ...
   -- Continue with the some branch
   simp only [bind, ReaderT.bind, EStateM.bind] at hr
@@ -651,7 +651,7 @@ theorem portState_eof_nonEmptyBuf_noOverride_success_pathStart
   -- Now we're in the else branch
   simp only [get_ParserM] at hr
   -- Again check stateOverride (for the throw check)
-  simp only [hso, Option.isSome_none, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [Option.isSome_none, Bool.false_eq_true, ↓reduceIte] at hr
   simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
   -- Final modify: set state := pathStart
   simp only [modify_ParserM] at hr
@@ -659,6 +659,326 @@ theorem portState_eof_nonEmptyBuf_noOverride_success_pathStart
   cases hr
   rfl
 
+/-- If portState succeeds with non-empty buffer and terminator input,
+    then the buffer must have parsed to a valid port.
+
+    This is the "inversion" lemma: success of portState implies port parsing succeeded.
+-/
+theorem portState_success_implies_valid_port
+    (methods : Methods) (m : Machine) (n : Nat)
+    (hp : m.pointer = .ofNat n)
+    (hc : m.input[n]? = none)  -- EOF terminator
+    (hbuf : m.buffer ≠ "")
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    ∃ portVal : Nat, m.buffer.toNat? = some portVal ∧ portVal < UInt16.size := by
+  -- By contrapositive: if port parsing fails, portState returns .error
+  -- Since hr says it returned .ok, port parsing must have succeeded
+  unfold portState at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  have hcurr : curr? methods m = .ok none m := by
+    unfold curr?
+    simp only [hp, hc]
+  rw [hcurr] at hr
+  simp only [Option.isSome_none, dif_neg (Bool.false_ne_true)] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  simp only [hget] at hr
+  simp only [Option.isNone_none, Bool.true_or, if_true] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  simp only [hget] at hr
+  -- Buffer check
+  have hbuf' : (m.buffer != "") = true := by simp only [bne_iff_ne, ne_eq, hbuf, not_false_eq_true]
+  simp only [hbuf', ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  simp only [hget] at hr
+  -- Now we're at the port parsing step
+  -- If m.buffer.toNat? = none, we get match none with | none => throw ..., which is .error
+  -- So for hr to be .ok, we need m.buffer.toNat? = some portVal
+  cases hparse : m.buffer.toNat? with
+  | none =>
+    -- Contradiction: this would lead to .error, not .ok
+    simp only [hparse, Option.bind_none] at hr
+    cases hr  -- hr : .error = .ok → contradiction
+  | some portVal =>
+    -- Now check if portVal < UInt16.size
+    by_cases hsize : portVal < UInt16.size
+    · exact ⟨portVal, rfl, hsize⟩
+    · -- portVal >= UInt16.size → parsing returns none → match none → throw → .error
+      simp only [hparse, Option.bind_some, hsize, ↓reduceIte] at hr
+      cases hr  -- hr : .error = .ok → contradiction
+
 end PortStateNonEmptyBuffer
+
+/-! ## Level 13: Inverse Derivation Lemmas -/
+
+section InverseLemmas
+
+/-- When portState succeeds via EOF terminator with nonempty buffer and no override,
+    state becomes pathStart.
+
+    This version doesn't require hValid - it derives validity from hr using inversion.
+-/
+theorem portState_eof_nonEmptyBuf_noOverride_pathStart_noValid
+    (methods : Methods) (m : Machine) (n : Nat)
+    (hp : m.pointer = .ofNat n)
+    (hc : m.input[n]? = none)  -- EOF terminator
+    (hbuf : m.buffer ≠ "")
+    (hso : m.stateOverride = none)
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    m'.state = .pathStart := by
+  -- First derive that port parsing succeeded
+  have hValid := portState_success_implies_valid_port methods m n hp hc hbuf m' hr
+  -- Now use the explicit lemma
+  exact portState_eof_nonEmptyBuf_noOverride_success_pathStart methods m n hp hc hbuf hso hValid m' hr
+
+/-- Derive port validity from success with slash terminator and nonempty buffer. -/
+theorem portState_slash_success_implies_valid_port
+    (methods : Methods) (m : Machine) (n : Nat)
+    (hp : m.pointer = .ofNat n)
+    (hc : m.input[n]? = some '/')
+    (hbuf : m.buffer ≠ "")
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    ∃ portVal : Nat, m.buffer.toNat? = some portVal ∧ portVal < UInt16.size := by
+  -- Similar derivation as EOF case - the port parsing must succeed for hr to be .ok
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  -- Trace through portState execution to the port parsing step
+  unfold portState at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  have h_curr : curr? methods m = .ok (some '/') m := by
+    unfold curr?
+    simp only [hp, hc]
+  simp only [h_curr] at hr
+  simp only [Option.isSome_some, dite_true, Option.get_some] at hr
+  have hNotDigit : '/'.isDigit = false := by native_decide
+  simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [hget, get_ParserM] at hr
+  -- Check terminator condition for /
+  simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, Bool.true_or] at hr
+  simp only [if_true] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  simp only [hget] at hr
+  -- Now at buffer check
+  have hbuf' : (m.buffer != "") = true := by simp only [bne_iff_ne, ne_eq, hbuf, not_false_eq_true]
+  simp only [hbuf', ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  simp only [hget] at hr
+  -- Port parsing step
+  cases hparse : m.buffer.toNat? with
+  | none =>
+    simp only [hparse, Option.bind_none] at hr
+    cases hr
+  | some portVal =>
+    by_cases hsize : portVal < UInt16.size
+    · exact ⟨portVal, rfl, hsize⟩
+    · simp only [hparse, Option.bind_some, hsize, ↓reduceIte] at hr
+      cases hr
+
+/-- When portState succeeds via slash terminator with nonempty buffer and no override,
+    state becomes pathStart. -/
+theorem portState_slash_nonEmptyBuf_noOverride_pathStart
+    (methods : Methods) (m : Machine) (n : Nat)
+    (hp : m.pointer = .ofNat n)
+    (hc : m.input[n]? = some '/')
+    (hbuf : m.buffer ≠ "")
+    (hso : m.stateOverride = none)
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    m'.state = .pathStart := by
+  have hValid := portState_slash_success_implies_valid_port methods m n hp hc hbuf m' hr
+  obtain ⟨portVal, hport, hsize⟩ := hValid
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  unfold portState at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  have h_curr : curr? methods m = .ok (some '/') m := by
+    unfold curr?
+    simp only [hp, hc]
+  simp only [h_curr] at hr
+  simp only [Option.isSome_some, dite_true, Option.get_some] at hr
+  have hNotDigit : '/'.isDigit = false := by native_decide
+  simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [hget, get_ParserM] at hr
+  simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, Bool.true_or] at hr
+  simp only [if_true] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, hget, get_ParserM] at hr
+  have hbuf' : (m.buffer != "") = true := by simp only [bne_iff_ne, ne_eq, hbuf, not_false_eq_true]
+  simp only [hbuf', ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, hget, get_ParserM] at hr
+  simp only [hport, Option.bind_some, hsize, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  simp only [modify_ParserM] at hr
+  simp only [get_ParserM] at hr
+  simp only [hso, Option.isSome_none, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [get_ParserM] at hr
+  simp only [Option.isSome_none, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [modify_ParserM] at hr
+  cases hr
+  rfl
+
+/-- When portState succeeds via ? terminator with nonempty buffer and no override,
+    state becomes pathStart. -/
+theorem portState_question_nonEmptyBuf_noOverride_pathStart
+    (methods : Methods) (m : Machine) (n : Nat)
+    (hp : m.pointer = .ofNat n)
+    (hc : m.input[n]? = some '?')
+    (hbuf : m.buffer ≠ "")
+    (hso : m.stateOverride = none)
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    m'.state = .pathStart := by
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  unfold portState at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  have h_curr : curr? methods m = .ok (some '?') m := by
+    unfold curr?
+    simp only [hp, hc]
+  simp only [h_curr] at hr
+  simp only [Option.isSome_some, dite_true, Option.get_some] at hr
+  have hNotDigit : '?'.isDigit = false := by native_decide
+  simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [hget, get_ParserM] at hr
+  simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, Bool.true_or, Bool.or_true] at hr
+  simp only [if_true] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, hget, get_ParserM] at hr
+  have hbuf' : (m.buffer != "") = true := by simp only [bne_iff_ne, ne_eq, hbuf, not_false_eq_true]
+  simp only [hbuf', ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, hget, get_ParserM] at hr
+  -- Derive port validity from success
+  have hValid : ∃ portVal, m.buffer.toNat? = some portVal ∧ portVal < UInt16.size := by
+    cases hparse : m.buffer.toNat? with
+    | none =>
+      simp only [hparse, Option.bind_none] at hr
+      cases hr
+    | some portVal =>
+      by_cases hsize : portVal < UInt16.size
+      · exact ⟨portVal, rfl, hsize⟩
+      · simp only [hparse, Option.bind_some, hsize, ↓reduceIte] at hr
+        cases hr
+  obtain ⟨portVal, hport, hsize⟩ := hValid
+  simp only [hport, Option.bind_some, hsize, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  simp only [modify_ParserM] at hr
+  simp only [get_ParserM] at hr
+  simp only [hso, Option.isSome_none, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [get_ParserM] at hr
+  simp only [Option.isSome_none, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [modify_ParserM] at hr
+  cases hr
+  rfl
+
+/-- When portState succeeds via # terminator with nonempty buffer and no override,
+    state becomes pathStart. -/
+theorem portState_hash_nonEmptyBuf_noOverride_pathStart
+    (methods : Methods) (m : Machine) (n : Nat)
+    (hp : m.pointer = .ofNat n)
+    (hc : m.input[n]? = some '#')
+    (hbuf : m.buffer ≠ "")
+    (hso : m.stateOverride = none)
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    m'.state = .pathStart := by
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  unfold portState at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  have h_curr : curr? methods m = .ok (some '#') m := by
+    unfold curr?
+    simp only [hp, hc]
+  simp only [h_curr] at hr
+  simp only [Option.isSome_some, dite_true, Option.get_some] at hr
+  have hNotDigit : '#'.isDigit = false := by native_decide
+  simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [hget, get_ParserM] at hr
+  simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, Bool.true_or, Bool.or_true] at hr
+  simp only [if_true] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, hget, get_ParserM] at hr
+  have hbuf' : (m.buffer != "") = true := by simp only [bne_iff_ne, ne_eq, hbuf, not_false_eq_true]
+  simp only [hbuf', ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, hget, get_ParserM] at hr
+  -- Derive port validity from success
+  have hValid : ∃ portVal, m.buffer.toNat? = some portVal ∧ portVal < UInt16.size := by
+    cases hparse : m.buffer.toNat? with
+    | none =>
+      simp only [hparse, Option.bind_none] at hr
+      cases hr
+    | some portVal =>
+      by_cases hsize : portVal < UInt16.size
+      · exact ⟨portVal, rfl, hsize⟩
+      · simp only [hparse, Option.bind_some, hsize, ↓reduceIte] at hr
+        cases hr
+  obtain ⟨portVal, hport, hsize⟩ := hValid
+  simp only [hport, Option.bind_some, hsize, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  simp only [modify_ParserM] at hr
+  simp only [get_ParserM] at hr
+  simp only [hso, Option.isSome_none, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [get_ParserM] at hr
+  simp only [Option.isSome_none, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [modify_ParserM] at hr
+  cases hr
+  rfl
+
+/-- When portState succeeds via \\ terminator (special URLs) with nonempty buffer and no override,
+    state becomes pathStart. -/
+theorem portState_backslash_nonEmptyBuf_noOverride_pathStart
+    (methods : Methods) (m : Machine) (n : Nat)
+    (hp : m.pointer = .ofNat n)
+    (hc : m.input[n]? = some '\\')
+    (hSpecial : m.url.isSpecial = true)
+    (hbuf : m.buffer ≠ "")
+    (hso : m.stateOverride = none)
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    m'.state = .pathStart := by
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  unfold portState at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  have h_curr : curr? methods m = .ok (some '\\') m := by
+    unfold curr?
+    simp only [hp, hc]
+  simp only [h_curr] at hr
+  simp only [Option.isSome_some, dite_true, Option.get_some] at hr
+  have hNotDigit : '\\'.isDigit = false := by native_decide
+  simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [hget, get_ParserM] at hr
+  -- For \\, need isSpecial to trigger terminator
+  -- The condition has m.url.isSpecial && some '\\' == some '\\' which with hSpecial becomes true
+  simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, hSpecial, Bool.and_true, Bool.true_or,
+    Bool.or_true, beq_iff_eq, Char.reduceEq, hso, Option.isSome_none, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, get_ParserM] at hr
+  have hbuf' : (m.buffer != "") = true := by simp only [bne_iff_ne, ne_eq, hbuf, not_false_eq_true]
+  simp only [hbuf', ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, hget, get_ParserM] at hr
+  -- Derive port validity from success
+  have hValid : ∃ portVal, m.buffer.toNat? = some portVal ∧ portVal < UInt16.size := by
+    cases hparse : m.buffer.toNat? with
+    | none =>
+      simp only [hparse, Option.bind_none] at hr
+      cases hr
+    | some portVal =>
+      by_cases hsize : portVal < UInt16.size
+      · exact ⟨portVal, rfl, hsize⟩
+      · simp only [hparse, Option.bind_some, hsize, ↓reduceIte] at hr
+        cases hr
+  obtain ⟨portVal, hport, hsize⟩ := hValid
+  simp only [hport, Option.bind_some, hsize, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  simp only [modify_ParserM] at hr
+  simp only [get_ParserM] at hr
+  simp only [hso, Option.isSome_none, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [get_ParserM] at hr
+  simp only [Option.isSome_none, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [modify_ParserM] at hr
+  cases hr
+  rfl
+
+end InverseLemmas
 
 end LeanUrl.Parser
