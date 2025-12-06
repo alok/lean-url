@@ -981,4 +981,248 @@ theorem portState_backslash_nonEmptyBuf_noOverride_pathStart
 
 end InverseLemmas
 
+/-! ## Level 14: State Override Lemmas (early return paths) -/
+
+section StateOverrideLemmas
+
+/-- When portState succeeds with nonempty buffer and stateOverride.isSome (EOF),
+    state is unchanged due to early return after port parsing. -/
+theorem portState_eof_nonEmptyBuf_withOverride_state_unchanged
+    (methods : Methods) (m : Machine) (n : Nat) (so : State)
+    (hp : m.pointer = .ofNat n)
+    (hc : m.input[n]? = none)
+    (hbuf : m.buffer ≠ "")
+    (hso : m.stateOverride = some so)
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    m'.state = m.state := by
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  unfold portState at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  have h_curr : curr? methods m = .ok none m := by
+    unfold curr?
+    simp only [hp, hc]
+  simp only [h_curr] at hr
+  simp only [Option.isSome_none, dif_neg (Bool.false_ne_true)] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure, get_ParserM] at hr
+  simp only [Option.isNone_none, Bool.true_or, hso, Option.isSome_some, if_true] at hr
+  have hbuf' : (m.buffer != "") = true := by simp only [bne_iff_ne, ne_eq, hbuf, not_false_eq_true]
+  simp only [bind, ReaderT.bind, EStateM.bind, get_ParserM, hbuf', ↓reduceIte] at hr
+  -- Derive port validity from success
+  have hValid : ∃ portVal, m.buffer.toNat? = some portVal ∧ portVal < UInt16.size := by
+    cases hparse : m.buffer.toNat? with
+    | none =>
+      simp only [hparse, Option.bind_none] at hr
+      cases hr
+    | some portVal =>
+      by_cases hsize : portVal < UInt16.size
+      · exact ⟨portVal, rfl, hsize⟩
+      · simp only [hparse, Option.bind_some, hsize, ↓reduceIte] at hr
+        cases hr
+  obtain ⟨portVal, hport, hsize⟩ := hValid
+  simp only [hport, Option.bind_some, hsize, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  simp only [modify_ParserM] at hr
+  simp only [get_ParserM] at hr
+  -- This is where stateOverride.isSome triggers early return
+  simp only [hso, Option.isSome_some, ↓reduceIte] at hr
+  -- Early return: just pure ()
+  simp only [pure, ReaderT.pure, EStateM.pure] at hr
+  cases hr
+  rfl
+
+/-- When portState succeeds with nonempty buffer and stateOverride.isSome (slash),
+    state is unchanged. -/
+theorem portState_slash_nonEmptyBuf_withOverride_state_unchanged
+    (methods : Methods) (m : Machine) (n : Nat) (so : State)
+    (hp : m.pointer = .ofNat n)
+    (hc : m.input[n]? = some '/')
+    (hbuf : m.buffer ≠ "")
+    (hso : m.stateOverride = some so)
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    m'.state = m.state := by
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  unfold portState at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  have h_curr : curr? methods m = .ok (some '/') m := by
+    unfold curr?
+    simp only [hp, hc]
+  simp only [h_curr] at hr
+  simp only [Option.isSome_some, dite_true, Option.get_some] at hr
+  have hNotDigit : '/'.isDigit = false := by native_decide
+  simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [hget, get_ParserM] at hr
+  simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, Bool.true_or] at hr
+  simp only [if_true] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, hget, get_ParserM] at hr
+  have hbuf' : (m.buffer != "") = true := by simp only [bne_iff_ne, ne_eq, hbuf, not_false_eq_true]
+  simp only [hbuf', ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, hget, get_ParserM] at hr
+  have hValid : ∃ portVal, m.buffer.toNat? = some portVal ∧ portVal < UInt16.size := by
+    cases hparse : m.buffer.toNat? with
+    | none =>
+      simp only [hparse, Option.bind_none] at hr
+      cases hr
+    | some portVal =>
+      by_cases hsize : portVal < UInt16.size
+      · exact ⟨portVal, rfl, hsize⟩
+      · simp only [hparse, Option.bind_some, hsize, ↓reduceIte] at hr
+        cases hr
+  obtain ⟨portVal, hport, hsize⟩ := hValid
+  simp only [hport, Option.bind_some, hsize, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  simp only [modify_ParserM] at hr
+  simp only [get_ParserM] at hr
+  simp only [hso, Option.isSome_some, ↓reduceIte] at hr
+  simp only [pure, ReaderT.pure, EStateM.pure] at hr
+  cases hr
+  rfl
+
+/-- When portState succeeds with nonempty buffer and stateOverride.isSome (?),
+    state is unchanged. -/
+theorem portState_question_nonEmptyBuf_withOverride_state_unchanged
+    (methods : Methods) (m : Machine) (n : Nat) (so : State)
+    (hp : m.pointer = .ofNat n)
+    (hc : m.input[n]? = some '?')
+    (hbuf : m.buffer ≠ "")
+    (hso : m.stateOverride = some so)
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    m'.state = m.state := by
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  unfold portState at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  have h_curr : curr? methods m = .ok (some '?') m := by
+    unfold curr?
+    simp only [hp, hc]
+  simp only [h_curr] at hr
+  simp only [Option.isSome_some, dite_true, Option.get_some] at hr
+  have hNotDigit : '?'.isDigit = false := by native_decide
+  simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [hget, get_ParserM] at hr
+  simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, Bool.true_or, Bool.or_true] at hr
+  simp only [if_true] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, hget, get_ParserM] at hr
+  have hbuf' : (m.buffer != "") = true := by simp only [bne_iff_ne, ne_eq, hbuf, not_false_eq_true]
+  simp only [hbuf', ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, hget, get_ParserM] at hr
+  have hValid : ∃ portVal, m.buffer.toNat? = some portVal ∧ portVal < UInt16.size := by
+    cases hparse : m.buffer.toNat? with
+    | none =>
+      simp only [hparse, Option.bind_none] at hr
+      cases hr
+    | some portVal =>
+      by_cases hsize : portVal < UInt16.size
+      · exact ⟨portVal, rfl, hsize⟩
+      · simp only [hparse, Option.bind_some, hsize, ↓reduceIte] at hr
+        cases hr
+  obtain ⟨portVal, hport, hsize⟩ := hValid
+  simp only [hport, Option.bind_some, hsize, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  simp only [modify_ParserM] at hr
+  simp only [get_ParserM] at hr
+  simp only [hso, Option.isSome_some, ↓reduceIte] at hr
+  simp only [pure, ReaderT.pure, EStateM.pure] at hr
+  cases hr
+  rfl
+
+/-- When portState succeeds with nonempty buffer and stateOverride.isSome (#),
+    state is unchanged. -/
+theorem portState_hash_nonEmptyBuf_withOverride_state_unchanged
+    (methods : Methods) (m : Machine) (n : Nat) (so : State)
+    (hp : m.pointer = .ofNat n)
+    (hc : m.input[n]? = some '#')
+    (hbuf : m.buffer ≠ "")
+    (hso : m.stateOverride = some so)
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    m'.state = m.state := by
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  unfold portState at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  have h_curr : curr? methods m = .ok (some '#') m := by
+    unfold curr?
+    simp only [hp, hc]
+  simp only [h_curr] at hr
+  simp only [Option.isSome_some, dite_true, Option.get_some] at hr
+  have hNotDigit : '#'.isDigit = false := by native_decide
+  simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [hget, get_ParserM] at hr
+  simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, Bool.true_or, Bool.or_true] at hr
+  simp only [if_true] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, hget, get_ParserM] at hr
+  have hbuf' : (m.buffer != "") = true := by simp only [bne_iff_ne, ne_eq, hbuf, not_false_eq_true]
+  simp only [hbuf', ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, hget, get_ParserM] at hr
+  have hValid : ∃ portVal, m.buffer.toNat? = some portVal ∧ portVal < UInt16.size := by
+    cases hparse : m.buffer.toNat? with
+    | none =>
+      simp only [hparse, Option.bind_none] at hr
+      cases hr
+    | some portVal =>
+      by_cases hsize : portVal < UInt16.size
+      · exact ⟨portVal, rfl, hsize⟩
+      · simp only [hparse, Option.bind_some, hsize, ↓reduceIte] at hr
+        cases hr
+  obtain ⟨portVal, hport, hsize⟩ := hValid
+  simp only [hport, Option.bind_some, hsize, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  simp only [modify_ParserM] at hr
+  simp only [get_ParserM] at hr
+  simp only [hso, Option.isSome_some, ↓reduceIte] at hr
+  simp only [pure, ReaderT.pure, EStateM.pure] at hr
+  cases hr
+  rfl
+
+/-- When portState succeeds with nonempty buffer and stateOverride.isSome (\\),
+    state is unchanged. -/
+theorem portState_backslash_nonEmptyBuf_withOverride_state_unchanged
+    (methods : Methods) (m : Machine) (n : Nat) (so : State)
+    (hp : m.pointer = .ofNat n)
+    (hc : m.input[n]? = some '\\')
+    (hSpecial : m.url.isSpecial = true)
+    (hbuf : m.buffer ≠ "")
+    (hso : m.stateOverride = some so)
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    m'.state = m.state := by
+  have hget : (get : ParserM Machine) methods m = .ok m m := rfl
+  unfold portState at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  have h_curr : curr? methods m = .ok (some '\\') m := by
+    unfold curr?
+    simp only [hp, hc]
+  simp only [h_curr] at hr
+  simp only [Option.isSome_some, dite_true, Option.get_some] at hr
+  have hNotDigit : '\\'.isDigit = false := by native_decide
+  simp only [hNotDigit, Bool.false_eq_true, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure] at hr
+  simp only [hget, get_ParserM] at hr
+  simp only [Option.isNone_some, Bool.false_or, beq_self_eq_true, hSpecial, Bool.and_true, Bool.true_or,
+    Bool.or_true, beq_iff_eq, Char.reduceEq, hso, Option.isSome_some, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, get_ParserM] at hr
+  have hbuf' : (m.buffer != "") = true := by simp only [bne_iff_ne, ne_eq, hbuf, not_false_eq_true]
+  simp only [hbuf', ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind, hget, get_ParserM] at hr
+  have hValid : ∃ portVal, m.buffer.toNat? = some portVal ∧ portVal < UInt16.size := by
+    cases hparse : m.buffer.toNat? with
+    | none =>
+      simp only [hparse, Option.bind_none] at hr
+      cases hr
+    | some portVal =>
+      by_cases hsize : portVal < UInt16.size
+      · exact ⟨portVal, rfl, hsize⟩
+      · simp only [hparse, Option.bind_some, hsize, ↓reduceIte] at hr
+        cases hr
+  obtain ⟨portVal, hport, hsize⟩ := hValid
+  simp only [hport, Option.bind_some, hsize, ↓reduceIte] at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  simp only [modify_ParserM] at hr
+  simp only [get_ParserM] at hr
+  simp only [hso, Option.isSome_some, ↓reduceIte] at hr
+  simp only [pure, ReaderT.pure, EStateM.pure] at hr
+  cases hr
+  rfl
+
+end StateOverrideLemmas
+
 end LeanUrl.Parser

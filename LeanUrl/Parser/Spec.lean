@@ -1051,11 +1051,23 @@ theorem portState_nonEmptyBuf_withOverride_state
     m'.state = m.state := by
   obtain ⟨n, hp⟩ := hp
   obtain ⟨so, hso⟩ := hso
-  -- Trace through portState execution
-  unfold portState curr? at hr
-  simp only [hp, bind, ReaderT.bind, EStateM.bind] at hr
-  -- Similar to above but we hit the early return
-  sorry -- Complex nested match/bind structure
+  -- The terminator predicate gives us case analysis
+  unfold isPortTerminator at hTerm
+  simp only [Option.isNone_iff_eq_none] at hTerm
+  -- Convert m.pointer.toNat to n
+  have hc' : m.input[m.pointer.toNat]? = m.input[n]? := by simp only [hp, Int.toNat.eq_1]
+  rcases hTerm with hNone | hSlash | hQuestion | hHash | ⟨hSpecial, hBackslash⟩
+  -- Use Level 14 State Override lemmas
+  · have hNone' : m.input[n]? = none := by rw [← hc']; exact hNone
+    exact portState_eof_nonEmptyBuf_withOverride_state_unchanged methods m n so hp hNone' hbuf hso m' hr
+  · have hSlash' : m.input[n]? = some '/' := by rw [← hc']; exact hSlash
+    exact portState_slash_nonEmptyBuf_withOverride_state_unchanged methods m n so hp hSlash' hbuf hso m' hr
+  · have hQuestion' : m.input[n]? = some '?' := by rw [← hc']; exact hQuestion
+    exact portState_question_nonEmptyBuf_withOverride_state_unchanged methods m n so hp hQuestion' hbuf hso m' hr
+  · have hHash' : m.input[n]? = some '#' := by rw [← hc']; exact hHash
+    exact portState_hash_nonEmptyBuf_withOverride_state_unchanged methods m n so hp hHash' hbuf hso m' hr
+  · have hBackslash' : m.input[n]? = some '\\' := by rw [← hc']; exact hBackslash
+    exact portState_backslash_nonEmptyBuf_withOverride_state_unchanged methods m n so hp hBackslash' hSpecial hbuf hso m' hr
 
 /-- portState with terminator, buffer="", stateOverride=some throws.
 
@@ -1398,7 +1410,17 @@ theorem portState_buffer_digits
     | .ok () m' => bufferAllDigits m' ∨ m'.buffer = ""  -- buffer is cleared on transition
     | .error _ _ => True
   := by
-  sorry -- Follows from the structure of portState
+  -- Analyze portState result
+  unfold bufferAllDigits at *
+  cases hres : portState methods m with
+  | error _ _ => trivial
+  | ok _ m' =>
+    -- portState can only modify buffer via: push digit, or clear to ""
+    -- Case 1: digit branch - buffer gets digit pushed (preserves all-digits)
+    -- Case 2: terminator branch - buffer gets cleared to ""
+    -- We need to trace through to see which branch was taken
+    -- For now use sorry - would need granular buffer lemmas like we did for state
+    sorry
 
 /-- Port number validity: if buffer is non-empty and we're terminating, port < 65536 -/
 @[spec]
