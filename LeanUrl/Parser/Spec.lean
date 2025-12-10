@@ -1479,6 +1479,7 @@ theorem hostState_to_pathStart_on_slash
   := by
   -- When c? = '/' and not in file override mode, hostState enters the terminator branch
   -- which sets state := pathStart (or throws)
+  -- Would need granular lemmas for hostState similar to portState
   sorry
 
 /-! ## Authority State Specs -/
