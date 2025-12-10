@@ -1,4 +1,5 @@
 import LeanUrl.Parser.Basic
+import Canonical
 
 /-!
 # Ultra-Granular ParserM Lemmas

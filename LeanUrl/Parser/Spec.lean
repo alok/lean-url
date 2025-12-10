@@ -7,6 +7,7 @@ Infrastructure based on Std.Do by Sebastian Graf and Markus Himmel.
 import Std.Tactic.Do
 import LeanUrl.Parser.Basic
 import LeanUrl.Parser.Lemmas
+import Canonical
 
 open Std.Do
 open LeanUrl.Parser
@@ -1418,8 +1419,7 @@ theorem portState_buffer_digits
     -- portState can only modify buffer via: push digit, or clear to ""
     -- Case 1: digit branch - buffer gets digit pushed (preserves all-digits)
     -- Case 2: terminator branch - buffer gets cleared to ""
-    -- We need to trace through to see which branch was taken
-    -- For now use sorry - would need granular buffer lemmas like we did for state
+    -- Would need granular buffer lemmas like we did for state
     sorry
 
 /-- Port number validity: if buffer is non-empty and we're terminating, port < 65536 -/
@@ -1471,11 +1471,14 @@ theorem hostState_to_port_on_colon
 theorem hostState_to_pathStart_on_slash
     (methods : Methods) (m : Machine)
     (hState : m.state = .host)
-    (hSlash : m.input[m.pointer.toNat]? = some '/') :
+    (hSlash : m.input[m.pointer.toNat]? = some '/')
+    (hNotFileOverride : ¬(m.stateOverride.isSome ∧ m.url.isFile)) :
     match hostState methods m with
     | .ok () m' => m'.state = .pathStart
     | .error _ _ => True
   := by
+  -- When c? = '/' and not in file override mode, hostState enters the terminator branch
+  -- which sets state := pathStart (or throws)
   sorry
 
 /-! ## Authority State Specs -/

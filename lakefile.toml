@@ -3,6 +3,11 @@ version = "0.1.0"
 defaultTargets = ["LeanUrl"]
 testDriver = "Tests"
 
+[[require]]
+name = "CanonicalLean"
+git = "https://github.com/chasenorman/CanonicalLean"
+rev = "master"
+
 [[lean_lib]]
 name = "LeanUrl"
 leanOptions = {autoImplicit = false}
