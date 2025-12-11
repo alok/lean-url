@@ -1226,4 +1226,66 @@ theorem portState_backslash_nonEmptyBuf_withOverride_state_unchanged
 
 end StateOverrideLemmas
 
+/-! ## Level 15: Buffer Tracking Lemmas -/
+
+section BufferLemmas
+
+/-- In digit branch, portState sets buffer to m.buffer.push c -/
+theorem portState_digit_sets_buffer
+    (methods : Methods) (m : Machine) (n : Nat) (c : Char)
+    (hp : m.pointer = .ofNat n)
+    (hc : m.input[n]? = some c)
+    (hDigit : c.isDigit = true)
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    m'.buffer = m.buffer.push c := by
+  unfold portState at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  have h_curr : curr? methods m = .ok (some c) m := by
+    unfold curr?
+    simp only [hp, hc]
+  simp only [h_curr] at hr
+  simp only [Option.isSome_some, dite_true, Option.get_some] at hr
+  simp only [hDigit, ↓reduceIte] at hr
+  simp only [modify_ParserM, pure, ReaderT.pure, EStateM.pure] at hr
+  cases hr
+  rfl
+
+/-- In EOF terminator branch with non-empty buffer and no override, portState clears buffer -/
+theorem portState_eof_clears_buffer
+    (methods : Methods) (m : Machine) (n : Nat)
+    (hp : m.pointer = .ofNat n)
+    (hc : m.input[n]? = none)
+    (hbuf : m.buffer ≠ "")
+    (hso : m.stateOverride = none)
+    (m' : Machine) (hr : portState methods m = .ok () m') :
+    m'.buffer = "" := by
+  unfold portState at hr
+  simp only [bind, ReaderT.bind, EStateM.bind] at hr
+  have h_curr : curr? methods m = .ok none m := by
+    unfold curr?
+    simp only [hp, hc]
+  simp only [h_curr] at hr
+  simp only [Option.isSome_none, dif_neg (Bool.false_ne_true)] at hr
+  simp only [bind, ReaderT.bind, pure, ReaderT.pure, EStateM.bind, EStateM.pure, get_ParserM] at hr
+  simp only [Option.isNone_none, Bool.true_or, hso, Option.isSome_none, ↓reduceIte] at hr
+  have hbuf' : (m.buffer != "") = true := by simp only [bne_iff_ne, ne_eq, hbuf, not_false_eq_true]
+  simp only [bind, ReaderT.bind, EStateM.bind, get_ParserM, hbuf', ↓reduceIte] at hr
+  -- Port parsing and buffer clear
+  cases hparse : m.buffer.toNat? with
+  | none =>
+    simp only [hparse, Option.bind_none] at hr
+    cases hr
+  | some portVal =>
+    by_cases hsize : portVal < UInt16.size
+    · simp only [hparse, Option.bind_some, hsize, ↓reduceIte] at hr
+      simp only [bind, ReaderT.bind, EStateM.bind, modify_ParserM, get_ParserM] at hr
+      -- After buffer := "", check stateOverride then set state
+      simp only [hso, Option.isSome_none, Bool.false_eq_true, ↓reduceIte, modify_ParserM, pure, ReaderT.pure, EStateM.pure] at hr
+      cases hr
+      rfl
+    · simp only [hparse, Option.bind_some, hsize, ↓reduceIte] at hr
+      cases hr
+
+end BufferLemmas
+
 end LeanUrl.Parser
